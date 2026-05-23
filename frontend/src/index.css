@@ -1974,3 +1974,169 @@
 @media (max-width: 480px) {
   .landing-live-chip { display: none !important; }
 }
+
+/* ── Tournaments page header — mobile ─────────────────────── */
+
+/* Mobile search bar in filter strip: hidden on desktop */
+.tourn-mobile-search { display: none; }
+
+@media (max-width: 768px) {
+  /* Hide desktop search bar + live chip from header */
+  .tourn-header-search { display: none !important; }
+  .tourn-live-chip     { display: none !important; }
+
+  /* Show search bar in filter strip instead */
+  .tourn-mobile-search { display: block; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   LANDING PAGE V2 — Hero split, steps, testimonials, CTA
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Nav center block (no inline display — CSS controls visibility) */
+.landing-nav-center {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+}
+
+/* ── Login button (hidden on mobile) */
+.landing-login-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── Header Organise / Dashboard CTA button */
+.landing-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 18px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+  line-height: 1.2;
+}
+
+/* ── Sports browse grid: 2 col on desktop */
+.sports-browse-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+/* ── Hero split: two-column on desktop */
+.hero-split {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  min-height: 540px;
+  overflow: hidden;
+}
+.hero-split-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 72px 48px 72px 64px;
+  position: relative;
+  overflow: hidden;
+}
+.hero-live-panel {
+  min-height: 540px;
+}
+
+/* ── Content grids */
+.stats-bar-grid      { grid-template-columns: repeat(4, 1fr); }
+.steps-grid          { grid-template-columns: repeat(3, 1fr); }
+.testimonials-grid   { grid-template-columns: repeat(3, 1fr); }
+.dual-cta-grid       { grid-template-columns: 1fr 1fr; }
+
+/* ══════════════════════════════════════════════════════════
+   RESPONSIVE — collapse at 1024px (everything below desktop)
+   ══════════════════════════════════════════════════════════ */
+
+@media (max-width: 1024px) {
+  /* Hide nav links and login button */
+  .landing-nav-center { display: none !important; }
+  .landing-login-btn  { display: none !important; }
+
+  /* Collapse hero to single column, hide live panel */
+  .hero-split {
+    display: block !important;
+    min-height: unset;
+  }
+  .hero-split-left {
+    padding: 52px 32px 44px !important;
+  }
+  .hero-live-panel {
+    display: none !important;
+  }
+
+  /* Stats bar: 2×2 */
+  .stats-bar-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 20px !important;
+  }
+
+  /* Collapse 3-col grids */
+  .steps-grid        { grid-template-columns: 1fr 1fr !important; }
+  .testimonials-grid { grid-template-columns: 1fr 1fr !important; }
+  .dual-cta-grid     { grid-template-columns: 1fr !important; }
+
+  /* Sports grid: still 2 col at tablet but cards have enough room */
+  .sports-browse-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Header CTA button: compact on tablet/mobile */
+  .landing-cta-btn {
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+  }
+}
+
+/* Sports grid → 1 column below 600px where 2-col clips text */
+@media (max-width: 600px) {
+  .sports-browse-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  /* Hero tighter padding */
+  .hero-split-left { padding: 40px 20px 36px !important; }
+
+  /* Section padding */
+  .landing-section-pad {
+    padding-top: 48px !important;
+    padding-bottom: 48px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* All multi-col grids → 1 col */
+  .steps-grid        { grid-template-columns: 1fr !important; }
+  .testimonials-grid { grid-template-columns: 1fr !important; }
+
+  /* Dual CTA card inner padding */
+  .dual-cta-card { padding: 32px 24px !important; }
+
+  /* Steps card */
+  .steps-card { padding: 24px 20px !important; }
+
+  /* Testimonials card */
+  .testimonials-card { padding: 22px 18px !important; }
+
+  /* Stats bar */
+  .stats-bar-grid { gap: 12px !important; }
+
+  /* Sports cards */
+  .sport-browse-card { min-height: 80px !important; }
+}

@@ -163,13 +163,14 @@ export default function Tournaments() {
               fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 900,
               color: "var(--ink)", whiteSpace: "nowrap", cursor: "pointer",
               textTransform: "uppercase", letterSpacing: -0.5, lineHeight: 1,
+              flexShrink: 0,
             }}
           >
             The<span style={{ color: "var(--primary)" }}>Score</span>Board
           </div>
 
-          {/* Search bar */}
-          <div style={{ flex: 1, maxWidth: 400, position: "relative" }}>
+          {/* Search bar — hidden on mobile, filters below cover it */}
+          <div className="tourn-header-search" style={{ flex: 1, maxWidth: 400, position: "relative" }}>
             <svg style={{
               position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
               color: "var(--muted)", pointerEvents: "none",
@@ -194,8 +195,9 @@ export default function Tournaments() {
 
           {/* Right actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            {/* Live chip — hidden on mobile (shown in filter strip below) */}
             {liveCount > 0 && (
-              <div style={{
+              <div className="tourn-live-chip" style={{
                 display: "flex", alignItems: "center", gap: 6,
                 background: "var(--primary)", color: "#fff",
                 padding: "5px 12px", borderRadius: 6,
@@ -208,13 +210,7 @@ export default function Tournaments() {
             )}
             <button
               onClick={() => navigate(isLoggedIn() ? "/organiser" : "/login")}
-              style={{
-                background: isLoggedIn() ? "var(--elevated)" : "var(--primary)",
-                color: isLoggedIn() ? "var(--ink)" : "#fff",
-                border: "none", borderRadius: 7, padding: "7px 14px",
-                fontFamily: "var(--font-body)", fontSize: "clamp(11px,3vw,13px)", fontWeight: 700,
-                cursor: "pointer", whiteSpace: "nowrap",
-              }}
+              className="landing-cta-btn"
             >
               {isLoggedIn() ? "Dashboard" : "Organise →"}
             </button>
@@ -273,6 +269,31 @@ export default function Tournaments() {
             >
               ← Home
             </button>
+          </div>
+
+          {/* Mobile search bar — visible only when header search is hidden */}
+          <div className="tourn-mobile-search" style={{ marginBottom: 12 }}>
+            <div style={{ position: "relative" }}>
+              <svg style={{
+                position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+                color: "var(--muted)", pointerEvents: "none",
+              }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                type="text"
+                placeholder="Search tournaments, cities…"
+                value={inputQ}
+                onChange={e => setInputQ(e.target.value)}
+                style={{
+                  width: "100%", boxSizing: "border-box",
+                  padding: "9px 10px 9px 32px", borderRadius: 8,
+                  border: "1.5px solid var(--border)",
+                  background: "var(--elevated)", color: "var(--ink)",
+                  fontSize: 13, outline: "none", fontFamily: "var(--font-body)",
+                }}
+              />
+            </div>
           </div>
 
           {/* Sport filter row */}
