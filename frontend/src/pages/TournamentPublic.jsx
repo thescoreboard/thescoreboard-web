@@ -1565,18 +1565,16 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
   };
 
   // Right panel: what to show when no live match
-  const upcomingMatch = !liveMatch
-    ? events.flatMap(ev => ev.all_matches || []).find(m => m.status !== "done")
-    : null;
+  // Show the dark right panel only when there are actual live matches.
+  const showRightPanel = (liveMatches?.length ?? 0) > 0;
 
-  const hasRightContent = liveMatch || upcomingMatch;
   const w = useW();
   const isMobile = w < 768;
 
   return (
     <div style={{
       display:"grid",
-      gridTemplateColumns: isMobile ? "1fr" : hasRightContent ? "55% 45%" : "1fr",
+      gridTemplateColumns: isMobile ? "1fr" : showRightPanel ? "55% 45%" : "1fr",
       minHeight: isMobile ? "auto" : 320,
       borderBottom:"3px solid var(--primary)"
     }}>
@@ -1672,8 +1670,8 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
         </div>
       </div>
 
-      {/* ── RIGHT PANEL — only shown when there's live/upcoming content ── */}
-      {hasRightContent && !isMobile && <div style={{ background:"#111", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 32px", position:"relative", overflow:"hidden" }}>
+      {/* ── RIGHT PANEL — live matches only ── */}
+      {showRightPanel && !isMobile && <div style={{ background:"#0d0d0d", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 32px", position:"relative", overflow:"hidden" }}>
 
         {/* Subtle sport emoji watermark */}
         {sportEmoji && (
@@ -1806,30 +1804,8 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
               </div>
             )}
           </div>
-        ) : upcomingMatch ? (
-          /* ── Upcoming match preview ── */
-          <div style={{ position:"relative", zIndex:1, textAlign:"center", width:"100%" }}>
-            <div style={{ fontFamily:"var(--font-display)", fontSize:8, fontWeight:800, letterSpacing:2.5, color:"rgba(255,255,255,.3)", marginBottom:24, textTransform:"uppercase" }}>
-              Next Match
-            </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr auto 1fr", alignItems:"center", gap:20 }}>
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10 }}>
-                <div style={{ width:72, height:72, borderRadius:18, background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.08)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <span style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"rgba(255,255,255,.6)" }}>{teamAbbr(upcomingMatch.player_1?.name)}</span>
-                </div>
-                <span style={{ fontSize:12, color:"rgba(255,255,255,.55)", textAlign:"center" }}>{upcomingMatch.player_1?.name || "TBD"}</span>
-              </div>
-              <div style={{ fontFamily:"var(--font-display)", fontSize:28, fontWeight:900, color:"rgba(255,255,255,.2)", letterSpacing:2 }}>vs</div>
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10 }}>
-                <div style={{ width:72, height:72, borderRadius:18, background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.08)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <span style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"rgba(255,255,255,.6)" }}>{teamAbbr(upcomingMatch.player_2?.name)}</span>
-                </div>
-                <span style={{ fontSize:12, color:"rgba(255,255,255,.55)", textAlign:"center" }}>{upcomingMatch.player_2?.name || "TBD"}</span>
-              </div>
-            </div>
-          </div>
         ) : (
-          /* ── No matches yet — blank (watermark only) ── */
+          /* ── No live match — just the dark panel (watermark emoji shows through) ── */
           null
         )}
       </div>}
@@ -2602,12 +2578,13 @@ function LeaderboardSection({ events }) {
 
 
 // ── Teams section (broadcast grid cards) ─────────────────────
-function TeamsSection({ events }) {
+function TeamsSection({ events, isIndividual }) {
   const w = useW();
   const isMobile = w < 640;
   const eventsWithParticipants = events.filter(ev => (ev.participants || []).length > 0);
   if (!eventsWithParticipants.length) return null;
   const multiEvent = eventsWithParticipants.length > 1;
+  const sectionTitle = isIndividual ? "PARTICIPATING PLAYERS" : "PARTICIPATING TEAMS";
 
   return (
     <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
@@ -2615,12 +2592,12 @@ function TeamsSection({ events }) {
         const ps = ev.participants || [];
         return (
           <div key={ev.event_id} style={{ marginBottom: multiEvent ? 48 : 0 }}>
-            <BroadcastSectionHeader title={multiEvent ? ev.name.toUpperCase() : "PARTICIPATING TEAMS"} count={ps.length} />
+            <BroadcastSectionHeader title={multiEvent ? ev.name.toUpperCase() : sectionTitle} count={ps.length} />
             <div style={{ display:"grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(180px, 1fr))", gap: isMobile ? 10 : 12 }}>
               {ps.map((p, i) => {
                 const color = TEAM_PALETTE[i % TEAM_PALETTE.length];
-                // 3-letter abbreviation from initials
-                const abbr  = p.name.split(/\s+/).map(w => w[0] || "").join("").toUpperCase().slice(0, 3) || "T";
+                // First letter for avatar
+                const initial = (p.name[0] || "T").toUpperCase();
                 return (
                   <div key={p.id} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderTop:`4px solid ${color}`, borderRadius:"0 0 14px 14px", padding:"28px 20px", textAlign:"center", boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
                     {p.logo_url ? (
@@ -2629,11 +2606,10 @@ function TeamsSection({ events }) {
                       </div>
                     ) : (
                       <div style={{ width:72, height:72, borderRadius:18, background:`${color}18`, border:`2px solid ${color}28`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
-                        <span style={{ fontFamily:"var(--font-display)", fontSize:24, fontWeight:900, color }}>{abbr[0]}</span>
+                        <span style={{ fontFamily:"var(--font-display)", fontSize:24, fontWeight:900, color }}>{initial}</span>
                       </div>
                     )}
-                    <div style={{ fontFamily:"var(--font-display)", fontSize:12, fontWeight:900, color:"var(--ink)", marginBottom:6 }}>{abbr}</div>
-                    <div style={{ fontSize:12, color:"var(--muted)", lineHeight:1.5 }}>{p.name}</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)", lineHeight:1.4 }}>{p.name}</div>
                     {p.group && <div style={{ fontSize:10, color:"var(--muted)", marginTop:4 }}>{p.group}</div>}
                   </div>
                 );
@@ -2647,13 +2623,23 @@ function TeamsSection({ events }) {
 }
 
 // ── Bracket section (Road to Final) ──────────────────────────
+// The section itself is the ONLY horizontal scroll boundary.
+// RoadToFinal's desktop brackets no longer have their own inner scroll wrappers,
+// so the bracket renders at its natural pixel width and this container catches any overflow.
 function BracketSection({ events }) {
   const w = useW();
   const isMobile = w < 640;
+  const hPad = isMobile ? "16px" : "40px";
   return (
-    <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
-      <BroadcastSectionHeader title="ROAD TO FINAL" />
-      <RoadToFinal events={events} />
+    <div style={{ paddingTop: isMobile ? 28 : 44, paddingBottom: isMobile ? 16 : 32, overflowX: "auto" }}>
+      {/* Header keeps side padding so it aligns with the rest of the page */}
+      <div style={{ paddingLeft: hPad, paddingRight: hPad, marginBottom: 24 }}>
+        <BroadcastSectionHeader title="ROAD TO FINAL" />
+      </div>
+      {/* Bracket: padded so cards don't touch screen edges, but unconstrained in width */}
+      <div style={{ paddingLeft: hPad, paddingRight: hPad }}>
+        <RoadToFinal events={events} />
+      </div>
     </div>
   );
 }
@@ -2782,6 +2768,11 @@ export default function TournamentPublic() {
   const primarySportKey = events[0]?.sport_key;
   const titleSponsor    = t.sponsors?.find(s => s.tier === "title") ?? null;
 
+  // Individual sports (badminton / table tennis single play) → label tabs "Players"
+  const isIndividualSport = (primarySportKey === "badminton" || primarySportKey === "table_tennis") &&
+    events.every(ev => ev.participant_type === "individual");
+  const teamsLabel = isIndividualSport ? "Players" : "Teams";
+
   if (status === "draft") return (
     <div className="app">
       <TickerBar allMatches={[]} />
@@ -2794,7 +2785,7 @@ export default function TournamentPublic() {
   // Build section list — order: Fixtures | Teams | Leaderboard | Info | Road to Final
   const sections = [
     { id:"fixtures",    label:"Fixtures",      count: allMatches.length },
-    ...(hasTeams   ? [{ id:"teams",       label:"Teams",         count: teamCount }] : []),
+    ...(hasTeams   ? [{ id:"teams",       label: teamsLabel,     count: teamCount }] : []),
     ...(hasBoard   ? [{ id:"leaderboard", label:"Leaderboard"                     }] : []),
     ...(hasInfo    ? [{ id:"info",        label:"Info"                             }] : []),
     ...(hasBracket ? [{ id:"bracket",    label:"Road to Final"                    }] : []),
@@ -2805,8 +2796,15 @@ export default function TournamentPublic() {
   return (
     <div className="app" style={{ paddingBottom: titleSponsor ? 68 : 0 }}>
 
-      {/* ── Scrolling scores ticker (very top, not sticky) ── */}
-      <TickerBar allMatches={allMatches} />
+      {/* ── Scrolling scores ticker — only in fixtures/live status, no TBD matches ── */}
+      <TickerBar allMatches={
+        (status === "fixtures" || status === "live")
+          ? allMatches.filter(m =>
+              m.player_1?.name && m.player_1.name !== "TBD" &&
+              m.player_2?.name && m.player_2.name !== "TBD"
+            )
+          : []
+      } />
 
       {/* ── Sticky broadcast nav (logo + tabs + utilities) ── */}
       <SectionNav
@@ -2838,7 +2836,7 @@ export default function TournamentPublic() {
       {/* ── Tab content ── */}
       <div style={{ minHeight:"50vh" }}>
         {effectiveActive === "fixtures"                && <FixturesSection events={events} onSelect={setSelectedMatch} />}
-        {effectiveActive === "teams"       && hasTeams  && <TeamsSection events={events} />}
+        {effectiveActive === "teams"       && hasTeams  && <TeamsSection events={events} isIndividual={isIndividualSport} />}
         {effectiveActive === "leaderboard" && hasBoard  && <LeaderboardSection events={events} />}
         {effectiveActive === "bracket"     && hasBracket && <BracketSection events={events} />}
         {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} tournament={t} />}

@@ -303,7 +303,8 @@ function DesktopBracket5({ leftQF, rightQF, leftSF, rightSF, theFinal, thirdPlac
 
   return (
     <div>
-      <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+      {/* No inner overflowX wrapper — BracketSection is the single scroll boundary */}
+      <div style={{ paddingBottom: 8 }}>
         <div style={{ position: "relative", width: W, height: H, margin: "0 auto" }}>
 
           {/* SVG connector lines */}
@@ -389,7 +390,8 @@ function DesktopBracket3({ leftSF, rightSF, theFinal, thirdPlace }) {
 
   return (
     <div>
-      <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+      {/* No inner overflowX wrapper — BracketSection is the single scroll boundary */}
+      <div style={{ paddingBottom: 8 }}>
         <div style={{ position: "relative", width: W, height: H, margin: "0 auto" }}>
 
           {/* SVG connector lines */}
