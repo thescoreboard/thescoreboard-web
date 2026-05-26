@@ -60,7 +60,35 @@ def _og_redirect_html(
     image_url: str,
     redirect_url: str,
     url: str,
+    deep_link: str = "",
 ) -> str:
+    deep_link_js = ""
+    if deep_link:
+        deep_link_js = f"""
+  // Try to open the native app first; fall back to website after 1.5 s
+  (function () {{
+    var ua = navigator.userAgent || "";
+    var isAndroid = /android/i.test(ua);
+    var isIOS     = /iphone|ipad|ipod/i.test(ua);
+    if (isAndroid || isIOS) {{
+      var appUrl   = "{deep_link}";
+      var webUrl   = "{redirect_url}";
+      // Intent URL for Android (works even when browser intercepts custom schemes)
+      var intentUrl = appUrl.replace(/^thescoreboard:\/\//, "intent://")
+                            + "#Intent;scheme=thescoreboard;package=in.thescoreboard.app;end";
+      var start = Date.now();
+      setTimeout(function () {{
+        // If we're still here after 1.5 s the app isn't installed — go to web
+        if (Date.now() - start < 2000) window.location.replace(webUrl);
+      }}, 1500);
+      window.location.href = isAndroid ? intentUrl : appUrl;
+      return;
+    }}
+    window.location.replace("{redirect_url}");
+  }})();"""
+    else:
+        deep_link_js = f'window.location.replace("{redirect_url}");'
+
     return f"""<!DOCTYPE html>
 <html lang="en" prefix="og: https://ogp.me/ns#">
 <head>
@@ -93,8 +121,8 @@ def _og_redirect_html(
   <meta name="twitter:image"       content="{image_url}"/>
   <meta name="twitter:image:alt"   content="{title}"/>
 
-  <!-- ── Redirect users to the app (crawlers stop at meta tags) ── -->
-  <script>window.location.replace("{redirect_url}")</script>
+  <!-- ── Smart redirect: app if installed, website otherwise ── -->
+  <script>{deep_link_js}</script>
 </head>
 <body>
   <p>Redirecting… <a href="{redirect_url}">Click here if not redirected.</a></p>
@@ -140,14 +168,15 @@ def share_tournament(request: Request, slug: str, db: Session = Depends(get_db))
     desc_parts = [p for p in [sport_label, t.city, t.venue] if p]
     description = " · ".join(desc_parts) if desc_parts else "Live tournament on TheScoreBoard"
 
-    # og:image must be an absolute URL reachable by social crawlers.
-    # We derive the origin from the incoming request so it works across
-    # dev tunnels, staging domains, and production without any extra env vars.
-    origin       = _origin(request)
-    image_url    = f"{origin}/api/share/og/tournament/{slug}.png"
+    # og:image must always point directly to the backend (api.thescoreboard.in)
+    # so WhatsApp / social crawlers can reach it even when the share page is
+    # served via the Vercel frontend proxy at thescoreboard.in/share/t/{slug}.
+    og_origin    = settings.APP_URL.rstrip("/")
+    image_url    = f"{og_origin}/api/share/og/tournament/{slug}.png"
     frontend_url = f"{settings.SITE_URL}/t/{slug}"
+    deep_link    = f"thescoreboard://t/{slug}"
 
-    return HTMLResponse(_og_redirect_html(title, description, image_url, frontend_url, frontend_url))
+    return HTMLResponse(_og_redirect_html(title, description, image_url, frontend_url, frontend_url, deep_link))
 
 
 # ── Tournament OG image ───────────────────────────────────────────────────────
@@ -212,11 +241,12 @@ def share_match(request: Request, match_id: int, db: Session = Depends(get_db)):
 
     tournament_slug = match.event.tournament.slug if (match.event and match.event.tournament) else "tournament"
 
-    origin       = _origin(request)
-    image_url    = f"{origin}/api/share/og/match/{match_id}.png"
+    og_origin    = settings.APP_URL.rstrip("/")
+    image_url    = f"{og_origin}/api/share/og/match/{match_id}.png"
     frontend_url = f"{settings.SITE_URL}/t/{tournament_slug}"
+    deep_link    = f"thescoreboard://t/{tournament_slug}"
 
-    return HTMLResponse(_og_redirect_html(title, description, image_url, frontend_url, frontend_url))
+    return HTMLResponse(_og_redirect_html(title, description, image_url, frontend_url, frontend_url, deep_link))
 
 
 # ── Match OG image ────────────────────────────────────────────────────────────

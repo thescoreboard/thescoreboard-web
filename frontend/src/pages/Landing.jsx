@@ -530,14 +530,14 @@ export default function Landing() {
               <button
                 onClick={() => navigate("/tournaments")}
                 style={{
-                  background: "none", border: "1px solid var(--border)",
-                  color: "var(--muted)", borderRadius: 6, padding: "8px 18px",
-                  fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  background: "var(--primary)", border: "none",
+                  color: "#fff", borderRadius: 8, padding: "10px 22px",
+                  fontSize: 11, fontWeight: 800, cursor: "pointer",
                   fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: 1.5,
-                  transition: "all 0.2s",
+                  transition: "opacity 0.2s",
                 }}
-                onMouseEnter={e => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.borderColor = "var(--primary)"; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
               >
                 View All →
               </button>
