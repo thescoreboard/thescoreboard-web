@@ -64,3 +64,11 @@ class Settings:
 
 
 settings = Settings()
+
+# Refuse to start in production with the placeholder key — anyone who knows
+# "change-me-in-production" can forge valid JWTs for any user.
+if settings.ENV == "prod" and settings.SECRET_KEY == "change-me-in-production":
+    raise RuntimeError(
+        "SECRET_KEY must be set to a cryptographically secure random value in "
+        "production. Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, distinct, or_
 from typing import Optional, List
+import time
 
 from app.database import get_db
 from app.models.tournament import Tournament
@@ -16,6 +17,12 @@ from app.models.player import Player, Team
 from pydantic import BaseModel
 
 router = APIRouter()
+
+# ── Simple in-memory cache for the homepage ──────────────────────────────────
+# The homepage is the most-called public endpoint (every app open).
+# 30-second TTL: data stays fresh enough while massively reducing DB load.
+_homepage_cache: dict = {"data": None, "ts": 0.0}
+HOMEPAGE_TTL = 30  # seconds
 
 
 def _serialize_participants(event_id: int, db: Session) -> list:
@@ -263,6 +270,13 @@ def homepage_data(
     q: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
+    # Return cached result for non-search requests (TTL = 30s)
+    # Searches are never cached since they're user-specific queries.
+    if not q:
+        now = time.time()
+        if _homepage_cache["data"] is not None and (now - _homepage_cache["ts"]) < HOMEPAGE_TTL:
+            return _homepage_cache["data"]
+
     query = (
         db.query(Tournament)
         .filter(Tournament.is_active == True)
@@ -309,7 +323,6 @@ def homepage_data(
             sports_data[sport_key]["tournament_count"] += 1
             if card["is_live"]:
                 sports_data[sport_key]["live_count"] += 1
-            # Build sport-filtered card from the same pre-loaded stats (no extra DB call)
             sport_card = _build_tournament_card(t, stats, sport_filter=sport_key)
             if sport_card["events"]:
                 sports_data[sport_key]["tournaments"].append(sport_card)
@@ -321,11 +334,18 @@ def homepage_data(
     all_cards.sort(key=lambda c: (-int(c["is_live"]), -c["total_matches"]))
     total_live = sum(c["live_count"] for c in all_cards)
 
-    return {
+    result = {
         "sports":             list(sports_data.values()),
         "trending":           all_cards[:8],
         "total_live_matches": total_live,
     }
+
+    # Store in cache (only for non-search requests)
+    if not q:
+        _homepage_cache["data"] = result
+        _homepage_cache["ts"]   = time.time()
+
+    return result
 
 
 # ── Sport page ────────────────────────────────────────────────
@@ -474,18 +494,65 @@ def get_tournament_page(slug: str, db: Session = Depends(get_db)):
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
-    events_data = []
-    for event in tournament.events:
-        if not event.is_active:
-            continue
-        matches = (
-            db.query(Match).filter(Match.event_id == event.event_id)
-            .options(
-                joinedload(Match.participants).joinedload(MatchParticipant.player),
-                joinedload(Match.participants).joinedload(MatchParticipant.team),
-                joinedload(Match.sets))
-            .order_by(Match.stage, Match.round, Match.match_id).all()
+    active_events = [e for e in tournament.events if e.is_active]
+    event_ids = [e.event_id for e in active_events]
+
+    # ── Bulk load: 2 queries for ALL events instead of N×2 ──────────────────
+    all_matches = (
+        db.query(Match)
+        .filter(Match.event_id.in_(event_ids))
+        .options(
+            joinedload(Match.participants).joinedload(MatchParticipant.player),
+            joinedload(Match.participants).joinedload(MatchParticipant.team),
+            joinedload(Match.sets),
         )
+        .order_by(Match.stage, Match.round, Match.match_id)
+        .all()
+    ) if event_ids else []
+
+    all_eps = (
+        db.query(EventParticipant)
+        .filter(EventParticipant.event_id.in_(event_ids))
+        .options(
+            joinedload(EventParticipant.player),
+            joinedload(EventParticipant.team),
+            joinedload(EventParticipant.group),
+        )
+        .all()
+    ) if event_ids else []
+
+    # Group in-memory by event_id
+    matches_by_event: dict[int, list] = {eid: [] for eid in event_ids}
+    for m in all_matches:
+        matches_by_event[m.event_id].append(m)
+
+    eps_by_event: dict[int, list] = {eid: [] for eid in event_ids}
+    for ep in all_eps:
+        eps_by_event[ep.event_id].append(ep)
+
+    events_data = []
+    for event in active_events:
+        matches = matches_by_event[event.event_id]
+        eps     = eps_by_event[event.event_id]
+
+        participants = []
+        for ep in eps:
+            if ep.team:
+                participants.append({
+                    "id":       ep.team.team_id,
+                    "name":     ep.team.name,
+                    "type":     "team",
+                    "logo_url": ep.team.logo_url,
+                    "group":    ep.group.name if ep.group else None,
+                })
+            elif ep.player:
+                participants.append({
+                    "id":    ep.player.player_id,
+                    "name":  ep.player.name,
+                    "type":  "player",
+                    "group": ep.group.name if ep.group else None,
+                })
+
         events_data.append({
             "event_id":          event.event_id,
             "name":              event.name,
@@ -495,13 +562,13 @@ def get_tournament_page(slug: str, db: Session = Depends(get_db)):
             "is_configured":     event.is_configured,
             "status":            event.status,
             "sport_config":      event.sport_config,
-            "team_size":         event.team_size,    # football: players on field
-            "squad_size":        event.squad_size,   # cricket: roster size
+            "team_size":         event.team_size,
+            "squad_size":        event.squad_size,
             "total_matches":     len(matches),
             "completed_matches": sum(1 for m in matches if m.status == "done"),
             "live_matches":      [_serialize_match(m) for m in matches if m.status == "live"],
             "all_matches":       [_serialize_match(m) for m in matches],
-            "participants":      _serialize_participants(event.event_id, db),
+            "participants":      participants,
         })
 
     return {
@@ -556,18 +623,61 @@ def get_tournament_by_sport(
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
-    events_data = []
-    for event in tournament.events:
-        if not event.is_active or event.sport_key != sport_key:
-            continue
-        matches = (
-            db.query(Match).filter(Match.event_id == event.event_id)
-            .options(
-                joinedload(Match.participants).joinedload(MatchParticipant.player),
-                joinedload(Match.participants).joinedload(MatchParticipant.team),
-                joinedload(Match.sets))
-            .order_by(Match.stage, Match.round, Match.match_id).all()
+    active_events = [e for e in tournament.events if e.is_active and e.sport_key == sport_key]
+    event_ids = [e.event_id for e in active_events]
+
+    # Bulk load matches + participants for all filtered events (2 queries total)
+    all_matches = (
+        db.query(Match)
+        .filter(Match.event_id.in_(event_ids))
+        .options(
+            joinedload(Match.participants).joinedload(MatchParticipant.player),
+            joinedload(Match.participants).joinedload(MatchParticipant.team),
+            joinedload(Match.sets),
         )
+        .order_by(Match.stage, Match.round, Match.match_id)
+        .all()
+    ) if event_ids else []
+
+    all_eps = (
+        db.query(EventParticipant)
+        .filter(EventParticipant.event_id.in_(event_ids))
+        .options(
+            joinedload(EventParticipant.player),
+            joinedload(EventParticipant.team),
+            joinedload(EventParticipant.group),
+        )
+        .all()
+    ) if event_ids else []
+
+    matches_by_event: dict[int, list] = {eid: [] for eid in event_ids}
+    for m in all_matches:
+        matches_by_event[m.event_id].append(m)
+
+    eps_by_event: dict[int, list] = {eid: [] for eid in event_ids}
+    for ep in all_eps:
+        eps_by_event[ep.event_id].append(ep)
+
+    events_data = []
+    for event in active_events:
+        matches = matches_by_event[event.event_id]
+        eps     = eps_by_event[event.event_id]
+
+        participants = []
+        for ep in eps:
+            if ep.team:
+                participants.append({
+                    "id": ep.team.team_id, "name": ep.team.name,
+                    "type": "team", "logo_url": ep.team.logo_url,
+                    "group": ep.group.name if ep.group else None,
+                })
+            elif ep.player:
+                participants.append({
+                    "id": ep.player.player_id, "name": ep.player.name,
+                    "type": "player",
+                    "group": ep.group.name if ep.group else None,
+                })
+
         events_data.append({
             "event_id":          event.event_id,
             "name":              event.name,
@@ -577,13 +687,13 @@ def get_tournament_by_sport(
             "is_configured":     event.is_configured,
             "status":            event.status,
             "sport_config":      event.sport_config,
-            "team_size":         event.team_size,    # football: players on field
-            "squad_size":        event.squad_size,   # cricket: roster size
+            "team_size":         event.team_size,
+            "squad_size":        event.squad_size,
             "total_matches":     len(matches),
             "completed_matches": sum(1 for m in matches if m.status == "done"),
             "live_matches":      [_serialize_match(m) for m in matches if m.status == "live"],
             "all_matches":       [_serialize_match(m) for m in matches],
-            "participants":      _serialize_participants(event.event_id, db),
+            "participants":      participants,
         })
 
     return {

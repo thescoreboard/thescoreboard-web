@@ -30,8 +30,8 @@ class OrgMember(Base):
     __tablename__ = "org_members"
 
     id = Column(Integer, primary_key=True)
-    org_id = Column(Integer, ForeignKey("organizations.org_id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(Integer, ForeignKey("organizations.org_id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(50), nullable=False, default="admin")  # admin | scorer | viewer
 
     __table_args__ = (

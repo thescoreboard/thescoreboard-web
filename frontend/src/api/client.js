@@ -1,7 +1,34 @@
 const BASE = import.meta.env.VITE_API_URL || "/api";
 function getToken() { return localStorage.getItem("tsb_token"); }
 export function setToken(token) { localStorage.setItem("tsb_token", token); }
-export function clearToken() { localStorage.removeItem("tsb_token"); }
+export function clearToken() {
+  localStorage.removeItem("tsb_token");
+  localStorage.removeItem("tsb_user");
+}
+
+// ── Stored user / role helpers ───────────────────────────────────────────────
+// Mirrors the mobile auth store's user/roles pattern.
+// setStoredUser() is called after every successful login/register to cache the
+// /auth/me response (which includes the computed `roles` array) so that any
+// component can check permissions synchronously without an extra network round-trip.
+export function getStoredUser() {
+  try { return JSON.parse(localStorage.getItem("tsb_user")); } catch { return null; }
+}
+export function setStoredUser(user) {
+  if (user) localStorage.setItem("tsb_user", JSON.stringify(user));
+  else localStorage.removeItem("tsb_user");
+}
+/** True if the cached /me response includes `role` (e.g. "organiser", "player"). */
+export function hasRole(role) {
+  const u = getStoredUser();
+  return Array.isArray(u?.roles) && u.roles.includes(role);
+}
+
+// ── Mode helpers (mirrors mobile SecureStore pattern) ────────────────────────
+// Default is "player" — matches the mobile app and ensures new users land on
+// the player dashboard rather than the (empty) organiser workspace.
+export function getMode() { return localStorage.getItem("tsb_mode") || "player"; }
+export function setMode(mode) { localStorage.setItem("tsb_mode", mode); }
 
 // ── Post-login redirect helpers ─────────────────────────────────────────────
 // Call saveLoginRedirect(path) before sending a user to /login so that after

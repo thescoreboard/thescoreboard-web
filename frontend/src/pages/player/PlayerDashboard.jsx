@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getMe, getPlayerProfile, savePlayerProfile, clearToken,
-  getMyStats, getMyTournaments,
+  getMyStats, getMyTournaments, getMode, setMode, setStoredUser,
 } from "../../api/client";
 import OrgHeader from "../../components/shared/OrgHeader";
 import PageLoader from "../../components/shared/PageLoader";
@@ -231,7 +231,7 @@ export default function PlayerDashboard() {
   const [stats,       setStats]       = useState(null);
   const [tournaments, setTournaments] = useState([]);
 
-  const mode = localStorage.getItem("tsb_mode") || "player";
+  const mode = getMode();
   const isOrgMode = mode === "organiser";
 
   useEffect(() => {
@@ -243,7 +243,7 @@ export default function PlayerDashboard() {
           getMyStats().catch(() => null),
           getMyTournaments().catch(() => []),
         ]);
-        setUser(u); setProfile(p);
+        setUser(u); setStoredUser(u); setProfile(p);
         setStats(st ?? { tournaments_count:0, matches_played:0, wins:0, losses:0, win_pct:0, by_sport:{} });
         setTournaments(Array.isArray(tv) ? tv : []);
       } catch {
@@ -290,7 +290,7 @@ export default function PlayerDashboard() {
           {(hasOrganiser || isOrgMode) && (
             <button
               onClick={() => {
-                localStorage.setItem("tsb_mode", isOrgMode ? "player" : "organiser");
+                setMode(isOrgMode ? "player" : "organiser");
                 navigate(isOrgMode ? "/player" : "/organiser");
               }}
               style={{
@@ -622,7 +622,7 @@ export default function PlayerDashboard() {
                       Create and manage events for your club or school — for free.
                     </div>
                     <button
-                      onClick={() => { localStorage.setItem("tsb_mode","organiser"); navigate("/organiser"); }}
+                      onClick={() => { setMode("organiser"); navigate("/organiser"); }}
                       style={{
                         width:"100%", padding:"11px", borderRadius:9, border:"none",
                         background:"var(--primary)", color:"#fff",

@@ -42,7 +42,7 @@ const CHANNELS = [
  *   title:     share text
  */
 // Instagram status: null | "copied" | "shared"
-export function ShareButton({ type, slug, matchId, title, upward = false }) {
+export function ShareButton({ type, slug, matchId, title, upward = false, iconOnly = false }) {
   const [open,    setOpen]    = useState(false);
   const [copied,  setCopied]  = useState(false);
   const [igState, setIgState] = useState(null); // null | "copied" | "shared"
@@ -79,8 +79,10 @@ export function ShareButton({ type, slug, matchId, title, upward = false }) {
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
       <button
         onClick={() => setOpen((o) => !o)}
+        title="Share"
         style={{
-          display:"flex", alignItems:"center", gap:6, padding:"7px 14px",
+          display:"flex", alignItems:"center", gap:6,
+          padding: iconOnly ? "7px 9px" : "7px 14px",
           background:"var(--elevated)", border:"1px solid var(--border)",
           borderRadius:8, color:"var(--ink)", fontSize:14, fontWeight:500,
           cursor:"pointer", whiteSpace:"nowrap",
@@ -91,7 +93,7 @@ export function ShareButton({ type, slug, matchId, title, upward = false }) {
           <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
           <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
         </svg>
-        Share
+        {!iconOnly && "Share"}
       </button>
 
       {open && (

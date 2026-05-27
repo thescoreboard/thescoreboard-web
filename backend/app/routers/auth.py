@@ -20,6 +20,7 @@ from app.schemas.auth import (
     TokenOut, UserOut, PlayerProfileIn, PlayerProfileOut,
 )
 from app.utils.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.utils.roles import compute_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -118,24 +119,13 @@ def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
 
 # ── Current user ──────────────────────────────────────────────────────────────
 
-def _compute_roles(user: User, db: Session) -> list[str]:
-    """Derive roles from DB state — no roles column on User."""
-    roles = ["player"]  # every authenticated user is a player
-    has_org = db.query(OrgMember).filter(OrgMember.user_id == user.user_id).first()
-    if has_org:
-        roles.append("organiser")
-    if user.is_superadmin:
-        roles.append("superadmin")
-    return roles
-
-
 @router.get("/me", response_model=UserOut)
 def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     profile = db.query(Player).filter(Player.user_id == user.user_id).first()
     result = UserOut.model_validate(user)
     if profile:
         result.player_profile = PlayerProfileOut.model_validate(profile)
-    result.roles = _compute_roles(user, db)
+    result.roles = compute_roles(user, db)
     return result
 
 
@@ -238,32 +228,47 @@ def get_my_tournaments(
     if not eps:
         return []
 
+    # ── Bulk load: 1 query for events, 1 query for tournaments ──────────────
+    event_ids = list({ep.event_id for ep in eps})
+    events = db.query(Event).filter(Event.event_id.in_(event_ids)).all()
+    event_map: dict[int, Event] = {e.event_id: e for e in events}
+
+    tournament_ids = list({e.tournament_id for e in events})
+    tournaments = (
+        db.query(Tournament)
+        .filter(Tournament.tournament_id.in_(tournament_ids), Tournament.is_active == True)
+        .all()
+    )
+    t_map: dict[int, Tournament] = {t.tournament_id: t for t in tournaments}
+
+    # Best finish per tournament — one query per tournament (not per sport×tournament)
+    finish_map: dict[int, str | None] = {
+        tid: _best_finish_for_player(db, player_ids, tid) for tid in tournament_ids if tid in t_map
+    }
+
     # Deduplicate by tournament; keep first ep per tournament
     seen: dict[int, dict] = {}
     for ep in eps:
-        event = db.query(Event).filter(Event.event_id == ep.event_id).first()
+        event = event_map.get(ep.event_id)
         if not event:
             continue
-        t = db.query(Tournament).filter(
-            Tournament.tournament_id == event.tournament_id,
-            Tournament.is_active == True,
-        ).first()
+        t = t_map.get(event.tournament_id)
         if not t:
             continue
         tid = t.tournament_id
         if tid not in seen:
             seen[tid] = {
-                "tournament_id": t.tournament_id,
-                "name": t.name,
-                "slug": t.slug,
-                "status": t.status,
-                "sport_key": event.sport_key,
-                "event_name": event.name,
-                "start_date": t.start_date.isoformat() if t.start_date else None,
-                "end_date": t.end_date.isoformat() if t.end_date else None,
-                "city": t.city,
+                "tournament_id":    t.tournament_id,
+                "name":             t.name,
+                "slug":             t.slug,
+                "status":           t.status,
+                "sport_key":        event.sport_key,
+                "event_name":       event.name,
+                "start_date":       t.start_date.isoformat() if t.start_date else None,
+                "end_date":         t.end_date.isoformat()   if t.end_date   else None,
+                "city":             t.city,
                 "participant_status": ep.status,
-                "stage_reached": _best_finish_for_player(db, player_ids, tid),
+                "stage_reached":    finish_map.get(tid),
             }
 
     result = list(seen.values())
@@ -289,17 +294,21 @@ def get_my_stats(
 
     player_ids = [p.player_id for p in players]
 
-    # Tournament count
+    # ── Bulk load events for all participations (1 query) ───────────────────
     eps = db.query(EventParticipant).filter(EventParticipant.player_id.in_(player_ids)).all()
-    tournament_ids: set[int] = set()
-    event_sport_cache: dict[int, str] = {}
-    for ep in eps:
-        ev = db.query(Event).filter(Event.event_id == ep.event_id).first()
-        if ev:
-            tournament_ids.add(ev.tournament_id)
-            event_sport_cache[ev.event_id] = ev.sport_key
+    all_event_ids = list({ep.event_id for ep in eps})
+    events_bulk = db.query(Event).filter(Event.event_id.in_(all_event_ids)).all()
+    event_map: dict[int, Event] = {e.event_id: e for e in events_bulk}
 
-    # Match stats
+    tournament_ids: set[int] = {e.tournament_id for e in events_bulk}
+    # Map: event_id → sport_key (no per-row DB queries needed)
+    event_sport_map: dict[int, str] = {e.event_id: e.sport_key for e in events_bulk}
+    # Map: tournament_id → set of sport_keys played in that tournament
+    tournament_sports: dict[int, set[str]] = {}
+    for e in events_bulk:
+        tournament_sports.setdefault(e.tournament_id, set()).add(e.sport_key)
+
+    # Match stats (1 query)
     rows = (
         db.query(Match, MatchParticipant)
         .join(MatchParticipant, MatchParticipant.match_id == Match.match_id)
@@ -315,41 +324,45 @@ def get_my_stats(
     losses = matches_played - wins
     win_pct = round(wins / matches_played * 100) if matches_played else 0
 
-    # Per-sport breakdown
+    # Per-sport breakdown — event_sport_map covers all event_ids, no extra queries
     by_sport: dict[str, dict] = {}
     for match, mp in rows:
-        sport_key = event_sport_cache.get(match.event_id)
-        if not sport_key:
-            ev = db.query(Event).filter(Event.event_id == match.event_id).first()
-            sport_key = ev.sport_key if ev else "unknown"
-            if sport_key != "unknown":
-                event_sport_cache[match.event_id] = sport_key
+        sport_key = event_sport_map.get(match.event_id, "unknown")
         if sport_key not in by_sport:
-            by_sport[sport_key] = {"matches": 0, "wins": 0, "losses": 0, "win_pct": 0, "best_finish": None}
+            by_sport[sport_key] = {
+                "matches": 0, "wins": 0, "losses": 0, "win_pct": 0,
+                "best_finish": None, "_best_rank": -1,
+            }
         by_sport[sport_key]["matches"] += 1
         if mp.is_winner:
             by_sport[sport_key]["wins"] += 1
         else:
             by_sport[sport_key]["losses"] += 1
 
-    # Compute per-sport win_pct and best_finish
-    all_tids = list(tournament_ids)
-    for sport_key, data in by_sport.items():
+    # Compute win_pct per sport
+    for data in by_sport.values():
         m = data["matches"]
         data["win_pct"] = round(data["wins"] / m * 100) if m else 0
-        # Best finish across all tournaments for this sport
-        best_label = None
-        best_rank = -1
-        FINISH_RANK = {
-            "Champion": 6, "Runner-up": 5, "3rd Place": 4, "4th Place": 3,
-            "Semi-Final": 2, "Quarter-Final": 1, "Group Stage": 0,
-        }
-        for tid in all_tids:
-            label = _best_finish_for_player(db, player_ids, tid)
-            if label and FINISH_RANK.get(label, -1) > best_rank:
-                best_rank = FINISH_RANK[label]
-                best_label = label
-        data["best_finish"] = best_label
+
+    # Best finish: call _best_finish_for_player ONCE per tournament (not per sport×tournament)
+    # then distribute the result to every sport that was played in that tournament.
+    FINISH_RANK = {
+        "Champion": 6, "Runner-up": 5, "3rd Place": 4, "4th Place": 3,
+        "Semi-Final": 2, "Quarter-Final": 1, "Group Stage": 0,
+    }
+    for tid in tournament_ids:
+        label = _best_finish_for_player(db, player_ids, tid)
+        if not label:
+            continue
+        rank = FINISH_RANK.get(label, -1)
+        for sport_key in tournament_sports.get(tid, set()):
+            if sport_key in by_sport and rank > by_sport[sport_key]["_best_rank"]:
+                by_sport[sport_key]["_best_rank"] = rank
+                by_sport[sport_key]["best_finish"] = label
+
+    # Remove internal helper key before returning
+    for data in by_sport.values():
+        data.pop("_best_rank", None)
 
     return {
         "tournaments_count": len(tournament_ids),

@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { login, setToken, consumeLoginRedirect } from "../../api/client";
+import {
+  login, setToken, consumeLoginRedirect,
+  getMe, setStoredUser, setMode,
+} from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
 
 export default function Login() {
@@ -9,13 +12,37 @@ export default function Login() {
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
 
+  /** Fetch /auth/me, cache the user, then redirect based on role + stored mode. */
+  async function postAuthRedirect() {
+    try {
+      const u = await getMe();
+      setStoredUser(u);
+      const isOrganiser = Array.isArray(u?.roles) && u.roles.includes("organiser");
+      if (!isOrganiser) {
+        // Player-only account — always land on player dashboard
+        setMode("player");
+        navigate(consumeLoginRedirect("/player"), { replace: true });
+      } else {
+        // Organiser: respect any previously saved mode preference.
+        // If nothing stored yet (first login on this browser), default to organiser.
+        const storedMode = localStorage.getItem("tsb_mode");
+        const effectiveMode = storedMode || "organiser";
+        if (!storedMode) setMode("organiser");
+        navigate(consumeLoginRedirect(effectiveMode === "player" ? "/player" : "/organiser"), { replace: true });
+      }
+    } catch {
+      // If /me fails for any reason, fall back to organiser
+      navigate(consumeLoginRedirect("/organiser"), { replace: true });
+    }
+  }
+
   const handleSubmit = async () => {
     if (!form.email || !form.password) return setError("All fields are required.");
     setLoading(true); setError("");
     try {
       const data = await login(form);
       setToken(data.access_token);
-      navigate(consumeLoginRedirect("/organiser"), { replace: true });
+      await postAuthRedirect();
     } catch (e) { setError(e.message || "Login failed."); }
     finally { setLoading(false); }
   };
@@ -46,7 +73,7 @@ export default function Login() {
 
         {/* Google SSO */}
         <GoogleSignInButton
-          onSuccess={() => navigate(consumeLoginRedirect("/organiser"), { replace: true })}
+          onSuccess={postAuthRedirect}
           onError={(msg) => setError(msg)}
         />
 

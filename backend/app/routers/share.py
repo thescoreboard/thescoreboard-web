@@ -16,6 +16,26 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import settings
 from app.database import get_db
 from app.models.match import Match, MatchParticipant, MatchSet
+
+# Maps DB stage values to human-readable round labels for OG images
+_STAGE_LABEL_MAP = {
+    "group":       "Group Stage",
+    "quarter":     "Quarter-Final",
+    "semi":        "Semi-Final",
+    "third_place": "3rd Place",
+    "final":       "Final",
+}
+
+
+def _mp_name(mp: MatchParticipant | None) -> str:
+    """Return the display name for one side of a match (handles players AND teams)."""
+    if mp is None:
+        return "TBD"
+    if mp.player:
+        return mp.player.name
+    if mp.team:
+        return mp.team.name
+    return "TBD"
 from app.models.tournament import Tournament
 from app.services import storage, og_generator
 
@@ -221,6 +241,7 @@ def share_match(request: Request, match_id: int, db: Session = Depends(get_db)):
         db.query(Match)
         .options(
             joinedload(Match.participants).joinedload(MatchParticipant.player),
+            joinedload(Match.participants).joinedload(MatchParticipant.team),
             joinedload(Match.event),
         )
         .filter(Match.match_id == match_id)
@@ -230,8 +251,8 @@ def share_match(request: Request, match_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Match not found")
 
     parts = sorted(match.participants, key=lambda p: p.position)
-    t1 = parts[0].player.name if len(parts) > 0 else "TBD"
-    t2 = parts[1].player.name if len(parts) > 1 else "TBD"
+    t1 = _mp_name(parts[0] if len(parts) > 0 else None)
+    t2 = _mp_name(parts[1] if len(parts) > 1 else None)
 
     title = f"{t1} vs {t2}"
     event_name = match.event.name if match.event else ""
@@ -257,6 +278,7 @@ def og_match_image(match_id: int, db: Session = Depends(get_db)):
         db.query(Match)
         .options(
             joinedload(Match.participants).joinedload(MatchParticipant.player),
+            joinedload(Match.participants).joinedload(MatchParticipant.team),
             joinedload(Match.sets),
             joinedload(Match.event),
         )
@@ -267,21 +289,24 @@ def og_match_image(match_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Match not found")
 
     parts = sorted(match.participants, key=lambda p: p.position)
-    t1 = parts[0].player.name if len(parts) > 0 else "TBD"
-    t2 = parts[1].player.name if len(parts) > 1 else "TBD"
+    t1 = _mp_name(parts[0] if len(parts) > 0 else None)
+    t2 = _mp_name(parts[1] if len(parts) > 1 else None)
 
-    # Compute scores from sets
+    # Compute scores from sets (set-based sports like TT/Badminton).
+    # For cricket/football the aggregate score lives on MatchParticipant.score.
     score1 = score2 = None
     if match.sets:
         s1 = sum(1 for s in match.sets if s.winner_position == 1)
         s2 = sum(1 for s in match.sets if s.winner_position == 2)
         score1, score2 = str(s1), str(s2)
-    elif match.score_a is not None and match.score_b is not None:
-        score1, score2 = str(match.score_a), str(match.score_b)
+    elif len(parts) >= 2 and parts[0].score is not None and parts[1].score is not None:
+        score1, score2 = str(parts[0].score), str(parts[1].score)
 
     sport_key    = match.event.sport_key if match.event else None
     sport_label  = SPORT_LABELS.get(sport_key) if sport_key else None
-    round_label  = match.round_name
+    # Build round label from stage (Match has no round_name attribute)
+    stage = match.stage or ""
+    round_label  = _STAGE_LABEL_MAP.get(stage) or stage.replace("_", " ").title() or None
     t_name       = match.event.tournament.name if (match.event and match.event.tournament) else None
     t_color      = match.event.tournament.primary_color if (match.event and match.event.tournament) else None
 

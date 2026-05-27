@@ -17,7 +17,7 @@ class Match(Base):
 
     match_id = Column(Integer, primary_key=True)
     event_id = Column(Integer, ForeignKey("events.event_id", ondelete="CASCADE"), nullable=False, index=True)
-    group_id = Column(Integer, ForeignKey("groups.group_id", ondelete="SET NULL"), nullable=True)
+    group_id = Column(Integer, ForeignKey("groups.group_id", ondelete="SET NULL"), nullable=True, index=True)
 
     round = Column(Integer, nullable=False, default=1)
     stage = Column(String(50), default="group")  # group | quarter | semi | third_place | final

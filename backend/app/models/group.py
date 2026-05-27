@@ -36,8 +36,8 @@ class EventParticipant(Base):
     event_id = Column(Integer, ForeignKey("events.event_id", ondelete="CASCADE"), nullable=False, index=True)
 
     # One of these is set depending on participant_type
-    player_id = Column(Integer, ForeignKey("players.player_id", ondelete="CASCADE"), nullable=True)
-    team_id = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=True)
+    player_id = Column(Integer, ForeignKey("players.player_id", ondelete="CASCADE"), nullable=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=True, index=True)
 
     group_id = Column(Integer, ForeignKey("groups.group_id", ondelete="SET NULL"), nullable=True, index=True)
     seed = Column(Integer, nullable=True)
@@ -65,8 +65,8 @@ class Standing(Base):
     __tablename__ = "standings"
 
     standing_id    = Column(Integer, primary_key=True)
-    event_id       = Column(Integer, ForeignKey("events.event_id",   ondelete="CASCADE"), nullable=False)
-    group_id       = Column(Integer, ForeignKey("groups.group_id",   ondelete="CASCADE"), nullable=True)
+    event_id       = Column(Integer, ForeignKey("events.event_id",   ondelete="CASCADE"), nullable=False, index=True)
+    group_id       = Column(Integer, ForeignKey("groups.group_id",   ondelete="CASCADE"), nullable=True,  index=True)
     player_id      = Column(Integer, ForeignKey("players.player_id", ondelete="CASCADE"), nullable=True)
     team_id        = Column(Integer, ForeignKey("teams.team_id",     ondelete="CASCADE"), nullable=True)
 

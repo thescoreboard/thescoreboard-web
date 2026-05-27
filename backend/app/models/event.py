@@ -21,7 +21,7 @@ class Event(Base):
     __tablename__ = "events"
 
     event_id = Column(Integer, primary_key=True)
-    tournament_id = Column(Integer, ForeignKey("tournaments.tournament_id", ondelete="CASCADE"), nullable=False)
+    tournament_id = Column(Integer, ForeignKey("tournaments.tournament_id", ondelete="CASCADE"), nullable=False, index=True)
 
     name = Column(String(255), nullable=False)  # "Table Tennis Singles"
 
@@ -50,7 +50,7 @@ class Event(Base):
 
     # Status
     status = Column(String(50), default="setup")  # setup | live | completed
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

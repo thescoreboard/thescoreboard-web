@@ -20,6 +20,18 @@ router = APIRouter()
 
 # ── Player CRUD ──────────────────────────────────────────────
 
+def _check_org_member(org_id: int, user: User, db: Session) -> None:
+    """Raise 403 if the caller is not a member of org_id (superadmins bypass)."""
+    if user.is_superadmin:
+        return
+    member = db.query(OrgMember).filter(
+        OrgMember.org_id == org_id,
+        OrgMember.user_id == user.user_id,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this organization")
+
+
 @router.post("/", response_model=PlayerOut)
 def create_player(
     data: PlayerCreate,
@@ -27,6 +39,9 @@ def create_player(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # SEC-2: verify the caller belongs to this org before creating a player under it
+    if org_id:
+        _check_org_member(org_id, user, db)
     player = Player(
         name=data.name,
         age=data.age,
@@ -44,14 +59,12 @@ def create_player(
 
 @router.get("/", response_model=List[PlayerOut])
 def list_players(
-    org_id: Optional[int] = None,
+    org_id: int,   # SEC-1: now required — prevents leaking all players across all orgs
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    query = db.query(Player)
-    if org_id:
-        query = query.filter(Player.org_id == org_id)
-    return query.order_by(Player.name).all()
+    _check_org_member(org_id, user, db)
+    return db.query(Player).filter(Player.org_id == org_id).order_by(Player.name).all()
 
 
 @router.delete("/{player_id}")
@@ -63,6 +76,9 @@ def delete_player(
     player = db.query(Player).filter(Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
+    # SEC-3: verify ownership before deleting
+    if player.org_id:
+        _check_org_member(player.org_id, user, db)
     db.delete(player)
     db.commit()
     return {"ok": True}

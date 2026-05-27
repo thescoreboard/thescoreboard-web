@@ -11,6 +11,7 @@ from app.models.organization import Organization, OrgMember
 from app.models.tournament import Tournament
 from app.models.event import Event
 from app.utils.auth import get_current_user
+from app.utils.roles import compute_roles
 
 router = APIRouter()
 
@@ -79,6 +80,7 @@ def get_dashboard(
             "avatar_url":   user.avatar_url,
             "is_superadmin": user.is_superadmin,
             "plan":         user.plan,
+            "roles":        compute_roles(user, db),
         },
         "orgs": [
             {
