@@ -396,10 +396,13 @@ def update_tournament(
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
-    if data.status and data.status not in TOURNAMENT_STATUSES:
-        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {TOURNAMENT_STATUSES}")
-
+    # ERR-3: status transitions must go through the dedicated /transition endpoint
+    # which enforces lifecycle ordering. Accepting status via PATCH would let
+    # organisers jump from draft→completed or go backward.
+    _PATCH_BLOCKED = {"status", "is_active"}
     for field, val in data.model_dump(exclude_unset=True).items():
+        if field in _PATCH_BLOCKED:
+            continue
         setattr(t, field, val)
 
     db.commit()

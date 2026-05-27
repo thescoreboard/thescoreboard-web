@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { getMode, setMode, getStoredUser } from "../../api/client";
 
 function getModeIcon(mode) {
   if (mode === "player") return (
@@ -19,15 +20,21 @@ function getModeIcon(mode) {
 export default function OrgHeader({ crumbs = [], right = null, user = null, onLogout = null }) {
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState(() => localStorage.getItem("tsb_mode") || "organiser");
+  const [mode, setModeState] = useState(() => getMode());
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem("theme") || "light";
   });
 
+  // Determine whether to show the mode toggle.
+  // Prefer roles from the `user` prop (freshly fetched by the page) so the
+  // check stays accurate even if localStorage is slightly stale.
+  const userRoles = user?.roles ?? getStoredUser()?.roles ?? [];
+  const canSwitchMode = userRoles.includes("organiser");
+
   const toggleMode = () => {
     const next = mode === "organiser" ? "player" : "organiser";
+    setModeState(next);
     setMode(next);
-    localStorage.setItem("tsb_mode", next);
     navigate(next === "player" ? "/player" : "/organiser", { replace: false });
   };
 
@@ -91,24 +98,26 @@ export default function OrgHeader({ crumbs = [], right = null, user = null, onLo
             </button>
           ) : (
             <>
-              {/* Mode toggle */}
-              <button
-                onClick={toggleMode}
-                title={`Switch to ${mode === "organiser" ? "Player" : "Organiser"} mode`}
-                style={{
-                  display:"flex", alignItems:"center", gap:5,
-                  padding:"5px 10px", borderRadius:6, cursor:"pointer",
-                  border:"1px solid var(--border)",
-                  background: mode === "player" ? "rgba(22,163,74,.08)" : "var(--elevated)",
-                  color: mode === "player" ? "#16a34a" : "var(--muted)",
-                  fontSize:11, fontWeight:700,
-                }}
-              >
-                {getModeIcon(mode === "organiser" ? "player" : "organiser")}
-                <span className="user-name-desktop">
-                  {mode === "organiser" ? "Player" : "Organiser"}
-                </span>
-              </button>
+              {/* Mode toggle — only shown when the user has both player + organiser roles */}
+              {canSwitchMode && (
+                <button
+                  onClick={toggleMode}
+                  title={`Switch to ${mode === "organiser" ? "Player" : "Organiser"} mode`}
+                  style={{
+                    display:"flex", alignItems:"center", gap:5,
+                    padding:"5px 10px", borderRadius:6, cursor:"pointer",
+                    border:"1px solid var(--border)",
+                    background: mode === "player" ? "rgba(22,163,74,.08)" : "var(--elevated)",
+                    color: mode === "player" ? "#16a34a" : "var(--muted)",
+                    fontSize:11, fontWeight:700,
+                  }}
+                >
+                  {getModeIcon(mode === "organiser" ? "player" : "organiser")}
+                  <span className="user-name-desktop">
+                    {mode === "organiser" ? "Player" : "Organiser"}
+                  </span>
+                </button>
+              )}
             </>
           )}
 

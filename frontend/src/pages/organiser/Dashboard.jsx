@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getDashboard, createOrg, deleteOrg,
-  deleteTournament, clearToken,
+  deleteTournament, clearToken, setStoredUser,
 } from "../../api/client";
 import OrgHeader from "../../components/shared/OrgHeader";
 import CitySelect, { CITY_STATE_MAP } from "../../components/shared/CitySelect";
@@ -55,6 +55,7 @@ export default function Dashboard() {
       }
 
       setUser(data.user);
+      setStoredUser(data.user); // keep localStorage in sync for OrgHeader + role helpers
       const orgList = data.orgs || [];
       const map = {};
       let cleanOrgs = orgList.map(({ tournaments, ...o }) => { map[o.org_id] = { org: o, tournaments: tournaments || [] }; return o; });

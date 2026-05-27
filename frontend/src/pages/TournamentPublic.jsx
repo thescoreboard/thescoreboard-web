@@ -1511,7 +1511,7 @@ function TickerBar({ allMatches }) {
 }
 
 // ── Hero Band (broadcast-style dark hero) ─────────────────────
-function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatches, sportKey, onRegister, events, liveMatches }) {
+function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatches, sportKey, onRegister, events, liveMatches, slug }) {
   const status     = tournament.status || "draft";
   const isLiveNow  = liveCount > 0;
   const sportEmoji = sa(sportKey);
@@ -1649,9 +1649,20 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
             )}
           </div>
 
+          {/* Share button — static in hero, always visible */}
+          {slug && (
+            <div style={{ marginTop:18 }}>
+              <ShareButton
+                type="tournament"
+                slug={slug}
+                title={`${tournament.name} — Live on TheScoreBoard`}
+              />
+            </div>
+          )}
+
           {/* Register CTA */}
           {onRegister && status === "registration" && (
-            <button onClick={onRegister} style={{ marginTop:20, background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
+            <button onClick={onRegister} style={{ marginTop:16, background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
               Register Now →
             </button>
           )}
@@ -2118,11 +2129,11 @@ function SectionNav({ sections, activeId, onNav, darkMode, onToggleDark, slug, t
     <div style={{ position:"sticky", top:0, zIndex:200, background:"var(--surface)", borderBottom:"2px solid var(--ink)", backdropFilter:"blur(12px)" }}>
       <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "0 12px" : "0 40px", height:52, display:"flex", alignItems:"center", gap:0 }}>
 
-        {/* Brand */}
-        <span style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 9 : 12, fontWeight:900, letterSpacing:2, marginRight: isMobile ? 12 : 36, flexShrink:0, textTransform:"uppercase", lineHeight:1 }}>
+        {/* Brand — full wordmark on all screen sizes, just scaled down on mobile */}
+        <span style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 8 : 12, fontWeight:900, letterSpacing: isMobile ? 1 : 2, marginRight: isMobile ? 8 : 36, flexShrink:0, textTransform:"uppercase", lineHeight:1, whiteSpace:"nowrap" }}>
           <span style={{ color:"var(--primary)" }}>THE</span>
           <span style={{ color:"var(--ink)" }}>SCORE</span>
-          {!isMobile && <span style={{ color:"var(--primary)" }}>BOARD</span>}
+          <span style={{ color:"var(--primary)" }}>BOARD</span>
         </span>
 
         {/* Tab buttons */}
@@ -2131,13 +2142,13 @@ function SectionNav({ sections, activeId, onNav, darkMode, onToggleDark, slug, t
             const active = activeId === s.id;
             return (
               <button key={s.id} onClick={() => onNav(s.id)} style={{
-                padding: isMobile ? "0 12px" : "0 20px", border:"none",
+                padding: isMobile ? "0 10px" : "0 20px", border:"none",
                 borderBottom: active ? "3px solid var(--primary)" : "3px solid transparent",
                 marginBottom:"-2px",
                 cursor:"pointer", background:"transparent",
                 color: active ? "var(--primary)" : "var(--muted)",
                 fontFamily:"var(--font-display)", fontSize: isMobile ? 7 : 8, fontWeight:800, letterSpacing:1.5,
-                display:"flex", alignItems:"center", gap:6, height:"100%",
+                display:"flex", alignItems:"center", gap:4, height:"100%",
                 transition:"color .15s", flexShrink:0, textTransform:"uppercase",
               }}>
                 {s.label.toUpperCase()}
@@ -2145,7 +2156,7 @@ function SectionNav({ sections, activeId, onNav, darkMode, onToggleDark, slug, t
                   <span style={{
                     background: active ? "var(--primary)" : "var(--elevated)",
                     color: active ? "#fff" : "var(--muted)",
-                    borderRadius:3, padding:"1px 7px", fontSize:7, fontWeight:800,
+                    borderRadius:3, padding:"1px 5px", fontSize:7, fontWeight:800,
                     transition:"all .15s",
                   }}>
                     {s.count}
@@ -2156,17 +2167,14 @@ function SectionNav({ sections, activeId, onNav, darkMode, onToggleDark, slug, t
           })}
         </div>
 
-        {/* Utilities */}
-        <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-          {!isMobile && (
-            <button onClick={onToggleDark} style={{ background:"var(--elevated)", border:"1px solid var(--border)", borderRadius:6, width:34, height:34, cursor:"pointer", color:"var(--muted)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-              {darkMode
-                ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              }
-            </button>
-          )}
-          <ShareButton type="tournament" slug={slug} title={`${tournament?.name || ""} — Live on TheScoreBoard`} />
+        {/* Utilities — dark mode toggle only (share button is in the hero) */}
+        <div style={{ display:"flex", gap:6, flexShrink:0, alignItems:"center" }}>
+          <button onClick={onToggleDark} style={{ background:"var(--elevated)", border:"1px solid var(--border)", borderRadius:6, width:34, height:34, cursor:"pointer", color:"var(--muted)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            {darkMode
+              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            }
+          </button>
         </div>
       </div>
     </div>
@@ -2309,8 +2317,12 @@ function FixturesSection({ events, onSelect }) {
   const w = useW();
   const isMobile = w < 640;
 
+  // ── Active filter ──────────────────────────────────────────────
+  // "all" | "live" | "upcoming" | "done" | stage key
+  const [filter, setFilter] = useState("all");
+
   const STAGE_LABELS = {
-    group:"Group Stage", quarter:"Quarterfinal",
+    group:"Group Stage", r16:"Round of 16", quarter:"Quarterfinal",
     semi:"Semifinal", final:"Final", third_place:"3rd Place",
   };
   const getRoundLabel = (m) => {
@@ -2321,8 +2333,63 @@ function FixturesSection({ events, onSelect }) {
     return "Match";
   };
 
+  // ── Match sort order ─────────────────────────────────────────
+  // Priority: live → group → r16 → quarter → semi → final → 3rd_place → done
+  const STAGE_ORDER = { group:1, r16:2, quarter:3, semi:4, final:5, third_place:6 };
+
+  function sortMatches(matches) {
+    return [...matches].sort((a, b) => {
+      const aLive = a.status === "live" ? 0 : 1;
+      const bLive = b.status === "live" ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      const aDone = a.status === "done" ? 1 : 0;
+      const bDone = b.status === "done" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      const aStage = STAGE_ORDER[a.stage] ?? 0;
+      const bStage = STAGE_ORDER[b.stage] ?? 0;
+      if (aStage !== bStage) return aStage - bStage;
+      return (a.round ?? 0) - (b.round ?? 0);
+    });
+  }
+
+  // ── Apply filter ──────────────────────────────────────────────
+  function applyFilter(matches) {
+    if (filter === "all")      return matches;
+    if (filter === "live")     return matches.filter(m => m.status === "live");
+    if (filter === "upcoming") return matches.filter(m => m.status !== "live" && m.status !== "done");
+    if (filter === "done")     return matches.filter(m => m.status === "done");
+    // stage key
+    return matches.filter(m => m.stage === filter);
+  }
+
   const multiEvent = events.length > 1;
   const allMatches = events.flatMap(ev => ev.all_matches || []);
+
+  // ── Build filter pills from actual data ───────────────────────
+  const hasLive     = allMatches.some(m => m.status === "live");
+  const hasUpcoming = allMatches.some(m => m.status !== "live" && m.status !== "done");
+  const hasDone     = allMatches.some(m => m.status === "done");
+
+  // Collect stages that actually have matches, in display order
+  const STAGE_ORDER_ARR = ["group","r16","quarter","semi","final","third_place"];
+  const presentStages = STAGE_ORDER_ARR.filter(s => allMatches.some(m => m.stage === s));
+
+  // Build pill list — only include pills that have at least 1 match
+  const pills = [
+    { id:"all",      label:"All",         count: allMatches.length },
+    ...(hasLive     ? [{ id:"live",      label:"🔴 Live",     count: allMatches.filter(m => m.status === "live").length }] : []),
+    ...(hasUpcoming ? [{ id:"upcoming",  label:"Upcoming",    count: allMatches.filter(m => m.status !== "live" && m.status !== "done").length }] : []),
+    ...(hasDone     ? [{ id:"done",      label:"Completed",   count: allMatches.filter(m => m.status === "done").length }] : []),
+    // Divider then stage pills (only when there are multiple stages)
+    ...(presentStages.length > 1
+      ? presentStages.map(s => ({
+          id: s,
+          label: STAGE_LABELS[s] || s,
+          count: allMatches.filter(m => m.stage === s).length,
+          isStage: true,
+        }))
+      : []),
+  ];
 
   if (allMatches.length === 0) {
     return (
@@ -2337,9 +2404,68 @@ function FixturesSection({ events, onSelect }) {
 
   return (
     <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
+
+      {/* ── Filter pill bar ─────────────────────────────────── */}
+      {pills.length > 1 && (
+        <div style={{
+          display:"flex", gap:6, overflowX:"auto", paddingBottom:16,
+          scrollbarWidth:"none", msOverflowStyle:"none",
+          // thin separator before stage pills
+          flexWrap: isMobile ? "nowrap" : "wrap",
+        }}>
+          {pills.map((pill, i) => {
+            const active = filter === pill.id;
+            // Visual divider before first stage pill
+            const showDivider = pill.isStage && (i === 0 || !pills[i-1]?.isStage);
+            return (
+              <div key={pill.id} style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                {showDivider && (
+                  <div style={{ width:1, height:20, background:"var(--border)", flexShrink:0, marginRight:2 }} />
+                )}
+                <button
+                  onClick={() => setFilter(pill.id)}
+                  style={{
+                    display:"inline-flex", alignItems:"center", gap:5,
+                    padding: isMobile ? "6px 12px" : "7px 14px",
+                    borderRadius:999,
+                    border: active ? "none" : "1.5px solid var(--border)",
+                    background: active
+                      ? (pill.id === "live" ? "var(--primary)" : "var(--ink)")
+                      : "var(--surface)",
+                    color: active ? "#fff" : "var(--muted)",
+                    fontFamily:"var(--font-display)", fontSize: isMobile ? 9 : 10,
+                    fontWeight:800, letterSpacing:1, textTransform:"uppercase",
+                    cursor:"pointer", transition:"all .15s", whiteSpace:"nowrap",
+                  }}
+                >
+                  {pill.label}
+                  {pill.count > 0 && (
+                    <span style={{
+                      fontSize: isMobile ? 8 : 9, fontWeight:800,
+                      background: active ? "rgba(255,255,255,.25)" : "var(--elevated)",
+                      color: active ? "#fff" : "var(--muted)",
+                      borderRadius:4, padding:"0px 5px",
+                    }}>
+                      {pill.count}
+                    </span>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {events.map((ev) => {
-        const matches = (ev.all_matches || []);
+        const sorted   = sortMatches(ev.all_matches || []);
+        const matches  = applyFilter(sorted);
         if (!matches.length && multiEvent) return null;
+        // If this event has no matches after filter, skip silently
+        if (!matches.length) return (
+          <div key={ev.event_id} style={{ textAlign:"center", padding:"40px 0", color:"var(--muted)", fontSize:13 }}>
+            No matches match this filter.
+          </div>
+        );
         return (
           <div key={ev.event_id} style={{ marginBottom: multiEvent ? 48 : 0 }}>
             <BroadcastSectionHeader
@@ -2777,7 +2903,7 @@ export default function TournamentPublic() {
     <div className="app">
       <TickerBar allMatches={[]} />
       <SectionNav sections={[{ id:"fixtures", label:"Fixtures" }]} activeId="fixtures" onNav={() => {}} darkMode={darkMode} onToggleDark={toggleDark} slug={slug} tournament={t} />
-      <HeroBand tournament={t} liveCount={0} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} onRegister={null} events={events} liveMatches={[]} />
+      <HeroBand tournament={t} liveCount={0} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} onRegister={null} events={events} liveMatches={[]} slug={slug} />
       <DraftView tournament={t} />
     </div>
   );
@@ -2828,6 +2954,7 @@ export default function TournamentPublic() {
         onRegister={() => navigate(`/t/${slug}/register`)}
         events={events}
         liveMatches={liveMatches}
+        slug={slug}
       />
 
       {/* ── Orange live strip (only when matches are live) ── */}

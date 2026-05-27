@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { register, setToken, consumeLoginRedirect } from "../../api/client";
+import {
+  register, setToken, consumeLoginRedirect,
+  getMe, setStoredUser, setMode,
+} from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
 
 export default function Register() {
@@ -8,6 +11,19 @@ export default function Register() {
   const [form,    setForm]    = useState({ name: "", email: "", password: "", phone: "" });
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
+
+  /**
+   * New accounts have no org yet → roles = ["player"] → land on player dashboard.
+   * We still honour tsb_next in case the user was redirected here from a specific page.
+   */
+  async function postRegisterRedirect() {
+    try {
+      const u = await getMe();
+      setStoredUser(u);
+    } catch { /* ignore — token is set, user will be fetched on next load */ }
+    setMode("player");
+    navigate(consumeLoginRedirect("/player"), { replace: true });
+  }
 
   const handleSubmit = async () => {
     if (!form.name || !form.email || !form.password)
@@ -18,7 +34,7 @@ export default function Register() {
     try {
       const data = await register(form);
       setToken(data.access_token);
-      navigate(consumeLoginRedirect("/organiser"), { replace: true });
+      await postRegisterRedirect();
     } catch (e) { setError(e.message || "Registration failed."); }
     finally { setLoading(false); }
   };
@@ -49,7 +65,7 @@ export default function Register() {
 
         {/* Google SSO — fastest path */}
         <GoogleSignInButton
-          onSuccess={() => navigate(consumeLoginRedirect("/organiser"), { replace: true })}
+          onSuccess={postRegisterRedirect}
           onError={(msg) => setError(msg)}
         />
 

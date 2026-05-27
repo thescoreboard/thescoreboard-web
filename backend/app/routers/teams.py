@@ -145,6 +145,14 @@ def delete_team(
     team = db.query(Team).filter(Team.team_id == team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
+    # SEC-4: verify the caller owns the org this team belongs to
+    if team.org_id and not user.is_superadmin:
+        member = db.query(OrgMember).filter(
+            OrgMember.org_id == team.org_id,
+            OrgMember.user_id == user.user_id,
+        ).first()
+        if not member:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this team")
     db.delete(team)
     db.commit()
     return {"ok": True}
