@@ -66,8 +66,8 @@ class MatchParticipant(Base):
     match_id = Column(Integer, ForeignKey("matches.match_id", ondelete="CASCADE"), nullable=False, index=True)
 
     # One of these is set
-    player_id = Column(Integer, ForeignKey("players.player_id", ondelete="CASCADE"), nullable=True)
-    team_id = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=True)
+    player_id = Column(Integer, ForeignKey("players.player_id", ondelete="CASCADE"), nullable=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=True, index=True)
 
     position = Column(Integer, nullable=False)  # 1 or 2
     score = Column(Integer, default=0)           # aggregate / total score

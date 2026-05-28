@@ -13,7 +13,7 @@ class Player(Base):
     __tablename__ = "players"
 
     player_id  = Column(Integer, primary_key=True)
-    org_id     = Column(Integer, ForeignKey("organizations.org_id", ondelete="SET NULL"), nullable=True)
+    org_id     = Column(Integer, ForeignKey("organizations.org_id", ondelete="SET NULL"), nullable=True, index=True)
     user_id    = Column(Integer, ForeignKey("users.user_id",        ondelete="SET NULL"), nullable=True, index=True)
     name       = Column(String(150), nullable=False)
     age        = Column(Integer,     nullable=True)
@@ -35,7 +35,7 @@ class Team(Base):
     __tablename__ = "teams"
 
     team_id       = Column(Integer, primary_key=True)
-    org_id        = Column(Integer, ForeignKey("organizations.org_id", ondelete="SET NULL"), nullable=True)
+    org_id        = Column(Integer, ForeignKey("organizations.org_id", ondelete="SET NULL"), nullable=True, index=True)
     name          = Column(String(150), nullable=False)
     sport_key     = Column(String(50),  nullable=True)
     contact_name  = Column(String(150), nullable=True)
@@ -57,7 +57,7 @@ class TeamMember(Base):
     __tablename__ = "team_members"
 
     tm_id         = Column(Integer, primary_key=True)
-    team_id       = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=False)
+    team_id       = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=False, index=True)
     name          = Column(String(150), nullable=False)
     role          = Column(String(50),  nullable=True)   # captain / vice_captain / player
     jersey_number = Column(Integer,     nullable=True)

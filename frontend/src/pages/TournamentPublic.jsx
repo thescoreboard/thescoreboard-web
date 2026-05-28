@@ -645,16 +645,20 @@ function FootballCard({ m, sponsorFooter }) {
 function DefaultCard({ m, sportKey, sponsorFooter }) {
   const isLive = m.status === "live";
   const isDone = m.status === "done";
-  const ls     = m.live_state || {};
   const completedSets = (m.sets || [])
     .filter(s => s.is_complete)
     .sort((a, b) => a.set_number - b.set_number);
-
-  const liveS1 = ls.score_p1 ?? 0;
-  const liveS2 = ls.score_p2 ?? 0;
-  const p1Win  = m.player_1?.is_winner;
-  const p2Win  = m.player_2?.is_winner;
-  const ac     = sAccent(sportKey);
+  const currentSet = (m.sets || []).find(s => !s.is_complete);
+  const liveS1  = currentSet?.score_p1 ?? 0;
+  const liveS2  = currentSet?.score_p2 ?? 0;
+  const p1Win   = m.player_1?.is_winner;
+  const p2Win   = m.player_2?.is_winner;
+  const ac      = sAccent(sportKey);
+  const server  = m.current_server;
+  const deuceAt = sportKey === "badminton" ? 20 : 10;
+  const inDeuce = isLive && liveS1 >= deuceAt && liveS2 >= deuceAt;
+  const dcIsDeuce = inDeuce && liveS1 === liveS2;
+  const dcAdvFor  = inDeuce && Math.abs(liveS1 - liveS2) === 1 ? (liveS1 > liveS2 ? 1 : 2) : null;
 
   const SetChip = ({ val, isWinner, isLiveChip }) => (
     <span style={{
@@ -679,9 +683,12 @@ function DefaultCard({ m, sportKey, sponsorFooter }) {
         <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
           {/* Player 1 */}
           <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-            <span style={{ flex:1, fontSize:13, fontWeight: p1Win ? 800 : 700, color: p1Win ? "var(--green)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-              {m.player_1?.name || "TBD"}
-            </span>
+            <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
+              {isLive && server === 1 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0, lineHeight:1 }}>●</span>}
+              <span style={{ fontSize:13, fontWeight: p1Win ? 800 : 700, color: p1Win ? "var(--green)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                {m.player_1?.name || "TBD"}
+              </span>
+            </div>
             <div style={{ display:"flex", gap:3 }}>
               {completedSets.map(s => (
                 <SetChip key={s.set_number} val={s.score_p1} isWinner={s.score_p1 > s.score_p2} />
@@ -691,9 +698,12 @@ function DefaultCard({ m, sportKey, sponsorFooter }) {
           </div>
           {/* Player 2 */}
           <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-            <span style={{ flex:1, fontSize:13, fontWeight: p2Win ? 800 : 700, color: p2Win ? "var(--green)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-              {m.player_2?.name || "TBD"}
-            </span>
+            <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
+              {isLive && server === 2 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0, lineHeight:1 }}>●</span>}
+              <span style={{ fontSize:13, fontWeight: p2Win ? 800 : 700, color: p2Win ? "var(--green)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                {m.player_2?.name || "TBD"}
+              </span>
+            </div>
             <div style={{ display:"flex", gap:3 }}>
               {completedSets.map(s => (
                 <SetChip key={s.set_number} val={s.score_p2} isWinner={s.score_p2 > s.score_p1} />
@@ -701,6 +711,14 @@ function DefaultCard({ m, sportKey, sponsorFooter }) {
               {isLive && <SetChip val={liveS2} isLiveChip />}
             </div>
           </div>
+          {/* Deuce / Advantage state */}
+          {isLive && (dcIsDeuce || dcAdvFor) && (
+            <div style={{ textAlign:"right", marginTop:2 }}>
+              <span style={{ fontSize:9, fontWeight:900, color:"var(--primary)", letterSpacing:0.5 }}>
+                {dcIsDeuce ? "DEUCE" : `ADV ${dcAdvFor === 1 ? (m.player_1?.name||"P1").split(" ")[0] : (m.player_2?.name||"P2").split(" ")[0]}`}
+              </span>
+            </div>
+          )}
         </div>
 
         <div style={{ flexShrink:0, display:"flex", alignItems:"center" }}>
@@ -1076,10 +1094,16 @@ function MatchDetailModal({ match: m, onClose }) {
 
   // Racket
   const completedSets = (m.sets || []).filter(s => s.is_complete).sort((a,b) => a.set_number - b.set_number);
-  const liveS1    = ls.score_p1 ?? 0;
-  const liveS2    = ls.score_p2 ?? 0;
+  const currentSetLive = (m.sets || []).find(s => !s.is_complete);
+  const liveS1    = currentSetLive?.score_p1 ?? 0;
+  const liveS2    = currentSetLive?.score_p2 ?? 0;
   const p1SetWins = completedSets.filter(s => s.score_p1 > s.score_p2).length;
   const p2SetWins = completedSets.filter(s => s.score_p2 > s.score_p1).length;
+  const server    = m.current_server; // 1 or 2
+  const deuceAt   = sportKey === "badminton" ? 20 : 10;
+  const inDeuce   = isRacket && isLive && liveS1 >= deuceAt && liveS2 >= deuceAt;
+  const mdIsDeuce = inDeuce && liveS1 === liveS2;
+  const mdAdvFor  = inDeuce && Math.abs(liveS1 - liveS2) === 1 ? (liveS1 > liveS2 ? 1 : 2) : null;
 
   // Cricket
   const battingFirst   = ls.batting_first   || 1;
@@ -1188,7 +1212,10 @@ function MatchDetailModal({ match: m, onClose }) {
                     display:"flex", alignItems:"center", justifyContent:"center" }}>
                     <span style={{ fontFamily:"var(--font-display)", fontSize:17, fontWeight:900, color: p1Win ? "#16a34a" : "var(--muted)", lineHeight:1 }}>{abbr(m.player_1?.name)}</span>
                   </div>
-                  <div style={{ fontSize:13, fontWeight:700, color: p1Win ? "#16a34a" : "var(--ink)", lineHeight:1.3, wordBreak:"break-word" }}>{m.player_1?.name || "TBD"}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                    {isRacket && isLive && server === 1 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1 }}>●</span>}
+                    <div style={{ fontSize:13, fontWeight:700, color: p1Win ? "#16a34a" : "var(--ink)", lineHeight:1.3, wordBreak:"break-word" }}>{m.player_1?.name || "TBD"}</div>
+                  </div>
                   {p1Win && <span style={{ fontSize:8, fontWeight:900, textTransform:"uppercase", letterSpacing:1.5, color:"#16a34a", background:"rgba(22,163,74,.1)", padding:"2px 7px", borderRadius:4 }}>Winner</span>}
                 </div>
 
@@ -1224,7 +1251,10 @@ function MatchDetailModal({ match: m, onClose }) {
                     display:"flex", alignItems:"center", justifyContent:"center" }}>
                     <span style={{ fontFamily:"var(--font-display)", fontSize:17, fontWeight:900, color: p2Win ? "#16a34a" : "var(--muted)", lineHeight:1 }}>{abbr(m.player_2?.name)}</span>
                   </div>
-                  <div style={{ fontSize:13, fontWeight:700, color: p2Win ? "#16a34a" : "var(--ink)", lineHeight:1.3, textAlign:"right", wordBreak:"break-word" }}>{m.player_2?.name || "TBD"}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"flex-end" }}>
+                    <div style={{ fontSize:13, fontWeight:700, color: p2Win ? "#16a34a" : "var(--ink)", lineHeight:1.3, textAlign:"right", wordBreak:"break-word" }}>{m.player_2?.name || "TBD"}</div>
+                    {isRacket && isLive && server === 2 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1 }}>●</span>}
+                  </div>
                   {p2Win && <span style={{ fontSize:8, fontWeight:900, textTransform:"uppercase", letterSpacing:1.5, color:"#16a34a", background:"rgba(22,163,74,.1)", padding:"2px 7px", borderRadius:4 }}>Winner</span>}
                 </div>
               </div>
@@ -1280,8 +1310,16 @@ function MatchDetailModal({ match: m, onClose }) {
                   {isLive && (
                     <div style={{ background:"var(--primary-dim)", border:"1px solid rgba(255,107,53,.3)", borderRadius:10, padding:"10px 6px", textAlign:"center" }}>
                       <div style={{ fontSize:9, color:"var(--primary)", fontWeight:700, marginBottom:5 }}>Now</div>
-                      <div style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--primary)" }}>{liveS1}</div>
-                      <div style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--primary)" }}>{liveS2}</div>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:3 }}>
+                        {server === 1 && <span style={{ fontSize:7, color:"var(--primary)", lineHeight:1 }}>●</span>}
+                        <div style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--primary)" }}>{liveS1}</div>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:3 }}>
+                        {server === 2 && <span style={{ fontSize:7, color:"var(--primary)", lineHeight:1 }}>●</span>}
+                        <div style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--primary)" }}>{liveS2}</div>
+                      </div>
+                      {mdIsDeuce && <div style={{ fontSize:7, color:"var(--primary)", fontWeight:900, marginTop:4, letterSpacing:0.5 }}>DEUCE</div>}
+                      {mdAdvFor  && <div style={{ fontSize:7, color:"var(--primary)", fontWeight:900, marginTop:4, letterSpacing:0.5 }}>ADV {mdAdvFor === 1 ? (m.player_1?.name||"P1").split(" ")[0] : (m.player_2?.name||"P2").split(" ")[0]}</div>}
                     </div>
                   )}
                 </div>
@@ -1768,6 +1806,28 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
                           <div style={{ fontFamily:"var(--font-display)", fontSize:"clamp(32px,3.5vw,52px)", fontWeight:900, color:"#fff", letterSpacing:-2, lineHeight:1 }}>
                             {m.player_1?.score ?? 0}—{m.player_2?.score ?? 0}
                           </div>
+                          {/* Current set point score for TT / Badminton */}
+                          {(m.sport_key === "table_tennis" || m.sport_key === "badminton") && (() => {
+                            const heroCS = (m.sets || []).find(s => !s.is_complete);
+                            if (!heroCS) return null;
+                            const hDeuceAt = m.sport_key === "badminton" ? 20 : 10;
+                            const hS1 = heroCS.score_p1, hS2 = heroCS.score_p2;
+                            const hInDeuce = hS1 >= hDeuceAt && hS2 >= hDeuceAt;
+                            const hLabel = hInDeuce && hS1 === hS2 ? "DEUCE"
+                              : hInDeuce && Math.abs(hS1 - hS2) === 1 ? `ADV ${hS1 > hS2 ? (m.player_1?.name||"P1").split(" ")[0] : (m.player_2?.name||"P2").split(" ")[0]}`
+                              : null;
+                            return (
+                              <div style={{ marginTop:8, display:"flex", alignItems:"center", justifyContent:"center", gap:8, flexWrap:"wrap" }}>
+                                {m.current_server === 1 && <span style={{ fontSize:9, color:"rgba(255,107,53,.8)" }}>●</span>}
+                                <span style={{ fontFamily:"var(--font-display)", fontSize:"clamp(13px,1.4vw,18px)", fontWeight:900, color:"rgba(255,107,53,.85)", letterSpacing:-0.5 }}>
+                                  {hS1}–{hS2}
+                                </span>
+                                {m.current_server === 2 && <span style={{ fontSize:9, color:"rgba(255,107,53,.8)" }}>●</span>}
+                                <span style={{ fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"rgba(255,255,255,.3)", letterSpacing:1.5, textTransform:"uppercase" }}>pts</span>
+                                {hLabel && <span style={{ fontFamily:"var(--font-display)", fontSize:7, fontWeight:900, color:"rgba(255,107,53,.9)", letterSpacing:1 }}>{hLabel}</span>}
+                              </div>
+                            );
+                          })()}
                           {mOvr && (
                             <div style={{ fontFamily:"var(--font-display)", fontSize:7.5, color:"rgba(255,255,255,.3)", letterSpacing:1.5, marginTop:8, textTransform:"uppercase" }}>
                               {mOvr}
@@ -2490,6 +2550,18 @@ function FixturesSection({ events, onSelect }) {
                 const p2win  = m.player_2?.is_winner;
                 const winner = p1win ? m.player_1?.name : p2win ? m.player_2?.name : null;
                 const rowBg  = isLive ? "rgba(255,107,53,.04)" : i % 2 === 0 ? "var(--surface)" : "var(--bg)";
+                // Racket sport helpers (TT / Badminton per-set display)
+                const isRacketFix  = m.sport_key === "table_tennis" || m.sport_key === "badminton";
+                const fSets        = [...(m.sets || [])].sort((a, b) => a.set_number - b.set_number);
+                const fCompSets    = fSets.filter(s => s.is_complete);
+                const fCurSet      = fSets.find(s => !s.is_complete);
+                const fServer      = m.current_server;
+                const fDeuceAt     = m.sport_key === "badminton" ? 20 : 10;
+                const fCS1         = fCurSet?.score_p1 ?? 0;
+                const fCS2         = fCurSet?.score_p2 ?? 0;
+                const fInDeuce     = isRacketFix && isLive && fCS1 >= fDeuceAt && fCS2 >= fDeuceAt;
+                const fIsDeuce     = fInDeuce && fCS1 === fCS2;
+                const fAdvFor      = fInDeuce && Math.abs(fCS1 - fCS2) === 1 ? (fCS1 > fCS2 ? 1 : 2) : null;
 
                 /* ── Mobile: card layout ── */
                 if (isMobile) {
@@ -2510,28 +2582,65 @@ function FixturesSection({ events, onSelect }) {
                           <span style={{ border:"1px solid var(--border)", color:"var(--muted)", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>UPCOMING</span>
                         )}
                       </div>
-                      {/* Score row */}
-                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                        <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textAlign:"right" }}>
-                          {m.player_1?.name || "TBD"}
-                        </span>
-                        <div style={{ background:"var(--elevated)", borderRadius:6, padding:"4px 14px", flexShrink:0 }}>
-                          {isDone || isLive ? (
-                            <span style={{ fontFamily:"var(--font-display)", fontSize:18, fontWeight:900, color: isLive ? "var(--primary)" : "var(--ink)", letterSpacing:-1 }}>
-                              {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
-                            </span>
-                          ) : (
-                            <span style={{ fontFamily:"var(--font-display)", fontSize:14, fontWeight:900, color:"var(--muted)" }}>vs</span>
+                      {/* Score row — racket sports show per-set breakdown */}
+                      {isRacketFix && (isDone || isLive) ? (
+                        <div>
+                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                            <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
+                              {isLive && fServer === 1 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
+                              <span style={{ fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_1?.name || "TBD"}</span>
+                            </div>
+                            <div style={{ display:"flex", gap:2, flexShrink:0 }}>
+                              {fCompSets.map(s => (
+                                <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
+                              ))}
+                              {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
+                            </div>
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
+                            <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
+                              {isLive && fServer === 2 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
+                              <span style={{ fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_2?.name || "TBD"}</span>
+                            </div>
+                            <div style={{ display:"flex", gap:2, flexShrink:0 }}>
+                              {fCompSets.map(s => (
+                                <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
+                              ))}
+                              {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
+                            </div>
+                          </div>
+                          {isLive && (fIsDeuce || fAdvFor) && (
+                            <div style={{ fontSize:9, fontWeight:900, color:"var(--primary)", marginTop:3, textAlign:"right", letterSpacing:0.5 }}>
+                              {fIsDeuce ? "DEUCE" : `ADV ${fAdvFor === 1 ? (m.player_1?.name||"P1").split(" ")[0] : (m.player_2?.name||"P2").split(" ")[0]}`}
+                            </div>
                           )}
+                          {winner && <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>{winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span></div>}
                         </div>
-                        <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {m.player_2?.name || "TBD"}
-                        </span>
-                      </div>
-                      {winner && (
-                        <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>
-                          {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
-                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textAlign:"right" }}>
+                              {m.player_1?.name || "TBD"}
+                            </span>
+                            <div style={{ background:"var(--elevated)", borderRadius:6, padding:"4px 14px", flexShrink:0 }}>
+                              {isDone || isLive ? (
+                                <span style={{ fontFamily:"var(--font-display)", fontSize:18, fontWeight:900, color: isLive ? "var(--primary)" : "var(--ink)", letterSpacing:-1 }}>
+                                  {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
+                                </span>
+                              ) : (
+                                <span style={{ fontFamily:"var(--font-display)", fontSize:14, fontWeight:900, color:"var(--muted)" }}>vs</span>
+                              )}
+                            </div>
+                            <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                              {m.player_2?.name || "TBD"}
+                            </span>
+                          </div>
+                          {winner && (
+                            <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>
+                              {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );
@@ -2563,24 +2672,60 @@ function FixturesSection({ events, onSelect }) {
                       {m.table_number && <div style={{ fontSize:9, color:"var(--muted)", marginTop:3 }}>Table {m.table_number}</div>}
                     </div>
 
-                    {/* Score column */}
-                    <div style={{ display:"flex", alignItems:"center" }}>
-                      <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, textAlign:"right", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>
-                        {m.player_1?.name || "TBD"}
-                      </span>
-                      <div style={{ padding:"0 24px", textAlign:"center", minWidth:100, flexShrink:0 }}>
-                        {isDone || isLive ? (
-                          <span style={{ fontFamily:"var(--font-display)", fontSize:26, fontWeight:900, color:"var(--ink)", letterSpacing:-1 }}>
-                            {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
-                          </span>
-                        ) : (
-                          <span style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--muted)" }}>vs</span>
+                    {/* Score column — racket sports: per-set breakdown */}
+                    {isRacketFix && (isDone || isLive) ? (
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <div style={{ flex:1, display:"flex", flexDirection:"column", gap:3, minWidth:0 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                            {isLive && fServer === 1 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
+                            <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>{m.player_1?.name || "TBD"}</span>
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                            {isLive && fServer === 2 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
+                            <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>{m.player_2?.name || "TBD"}</span>
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", flexDirection:"column", gap:3, flexShrink:0 }}>
+                          <div style={{ display:"flex", gap:3 }}>
+                            {fCompSets.map(s => (
+                              <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
+                            ))}
+                            {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
+                          </div>
+                          <div style={{ display:"flex", gap:3 }}>
+                            {fCompSets.map(s => (
+                              <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
+                            ))}
+                            {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
+                          </div>
+                        </div>
+                        {isLive && (fIsDeuce || fAdvFor) && (
+                          <div style={{ flexShrink:0 }}>
+                            <span style={{ fontSize:9, fontWeight:900, color:"var(--primary)", letterSpacing:0.5 }}>
+                              {fIsDeuce ? "DEUCE" : `ADV`}
+                            </span>
+                          </div>
                         )}
                       </div>
-                      <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>
-                        {m.player_2?.name || "TBD"}
-                      </span>
-                    </div>
+                    ) : (
+                      <div style={{ display:"flex", alignItems:"center" }}>
+                        <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, textAlign:"right", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>
+                          {m.player_1?.name || "TBD"}
+                        </span>
+                        <div style={{ padding:"0 24px", textAlign:"center", minWidth:100, flexShrink:0 }}>
+                          {isDone || isLive ? (
+                            <span style={{ fontFamily:"var(--font-display)", fontSize:26, fontWeight:900, color:"var(--ink)", letterSpacing:-1 }}>
+                              {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
+                            </span>
+                          ) : (
+                            <span style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--muted)" }}>vs</span>
+                          )}
+                        </div>
+                        <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>
+                          {m.player_2?.name || "TBD"}
+                        </span>
+                      </div>
+                    )}
 
                     {/* Result column */}
                     <div>

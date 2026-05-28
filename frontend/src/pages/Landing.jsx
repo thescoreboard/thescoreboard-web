@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHomepageData, isLoggedIn } from "../api/client";
+import { getHomepageData, isLoggedIn, getMode } from "../api/client";
 import TournamentCard, { SPORT_LABELS } from "../components/shared/TournamentCard";
 
 const SPORTS_CONFIG = [
@@ -223,33 +223,28 @@ export default function Landing() {
               )}
             </button>
 
-            {/* Login button — only when logged out, hidden on mobile */}
-            {!loggedIn && (
+            {/* Auth / dashboard actions */}
+            {loggedIn ? (
+              /* Logged in — go to their current-mode dashboard */
+              <button
+                onClick={() => navigate(getMode() === "organiser" ? "/organiser" : "/player")}
+                className="landing-cta-btn"
+                onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+              >
+                Dashboard →
+              </button>
+            ) : (
+              /* Logged out — Sign In only */
               <button
                 onClick={() => navigate("/login")}
-                style={{
-                  background: "none", border: "1px solid var(--border)",
-                  color: "var(--ink)", borderRadius: 7, padding: "7px 14px",
-                  fontFamily: "var(--font-body)", fontSize: 13, fontWeight: 700,
-                  cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.2s",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--ink)"; }}
-                className="landing-login-btn"
+                className="landing-cta-btn"
+                onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
               >
-                Login
+                Sign In
               </button>
             )}
-
-            {/* Organise / Dashboard CTA */}
-            <button
-              onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
-              className="landing-cta-btn"
-              onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
-            >
-              {loggedIn ? "Dashboard" : "Organise →"}
-            </button>
           </div>
         </div>
       </header>
@@ -321,7 +316,7 @@ export default function Landing() {
               Find Tournaments →
             </button>
             <button
-              onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
+              onClick={() => navigate(loggedIn ? (getMode() === "organiser" ? "/organiser" : "/player") : "/register")}
               style={{
                 background: "none", color: "var(--ink)",
                 border: "2px solid var(--border)", borderRadius: 9, padding: "12px 28px",
@@ -332,7 +327,7 @@ export default function Landing() {
               onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--ink)"; }}
             >
-              {loggedIn ? "Dashboard" : "Organise a Tournament"}
+              {loggedIn ? "My Dashboard" : "Create Account"}
             </button>
           </div>
         </div>
@@ -862,7 +857,7 @@ export default function Landing() {
                 onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(255,107,53,0.4)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
               >
-                {loggedIn ? "Go to Dashboard →" : "Start Organising →"}
+                {loggedIn ? "Organiser Dashboard →" : "Start Organising →"}
               </button>
             </div>
           </div>
@@ -1049,23 +1044,25 @@ export default function Landing() {
         </div>
       </footer>
 
-      {/* ── FAB (mobile only) ───────────────────────────────── */}
-      <button
-        onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
-        style={{
-          position: "fixed", bottom: 24, right: 20, zIndex: 100,
-          display: "flex", alignItems: "center", gap: 8,
-          background: "var(--primary)", color: "#fff",
-          border: "none", borderRadius: 50, padding: "13px 22px",
-          fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
-          textTransform: "uppercase", letterSpacing: 1,
-          boxShadow: "0 4px 20px rgba(255,107,53,0.5)", cursor: "pointer",
-          transition: "all 0.2s",
-        }}
-        className="fab-hide-desktop"
-      >
-        + Organise
-      </button>
+      {/* ── FAB (mobile only, logged-in users only) ─────────── */}
+      {loggedIn && (
+        <button
+          onClick={() => navigate(getMode() === "organiser" ? "/organiser" : "/player")}
+          style={{
+            position: "fixed", bottom: 24, right: 20, zIndex: 100,
+            display: "flex", alignItems: "center", gap: 8,
+            background: "var(--primary)", color: "#fff",
+            border: "none", borderRadius: 50, padding: "13px 22px",
+            fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
+            textTransform: "uppercase", letterSpacing: 1,
+            boxShadow: "0 4px 20px rgba(255,107,53,0.5)", cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          className="fab-hide-desktop"
+        >
+          Dashboard →
+        </button>
+      )}
     </div>
   );
 }

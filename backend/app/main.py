@@ -43,10 +43,16 @@ async def _capture_event_loop():
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch-all so every error shows in the backend console."""
+    """Catch-all so every error shows in the backend console.
+    Always mirrors back the CORS headers so the browser can read the error body."""
     logger.error(f"Unhandled error on {request.method} {request.url}:")
     logger.error(traceback.format_exc())
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin and (allowed_origins == ["*"] or origin in allowed_origins):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(status_code=500, content={"detail": str(exc)}, headers=headers)
 
 # ── CORS Configuration ────────────────────────────────────────
 # Support comma-separated origins: "https://dev.thescoreboard.in,http://localhost:5173"
