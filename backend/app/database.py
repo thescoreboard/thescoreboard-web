@@ -14,11 +14,11 @@ elif db_url.startswith("postgres://"):
 
 engine = create_engine(
     db_url,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=20,          # was 10 — background WS push tasks consume their own connections
+    max_overflow=30,       # was 20 — burst capacity for concurrent live scoring
     pool_recycle=600,
     pool_pre_ping=True,
-    pool_timeout=30,
+    pool_timeout=15,       # was 30 — fail fast rather than queue indefinitely
     connect_args={
         "prepare_threshold": None,  # disable prepared statements for pgbouncer
     },

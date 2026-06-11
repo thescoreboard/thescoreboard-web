@@ -266,7 +266,7 @@ def _finish_match(match: Match, winner_position: Optional[int], db: Optional[Ses
 # one full tournament-page rebuild per 500 ms window.
 _ws_last_push: dict = {}
 _ws_push_lock  = threading.Lock()
-_WS_DEBOUNCE_SECS = 0.5
+_WS_DEBOUNCE_SECS = 0.3
 
 
 def _push_ws_update(event_id: int) -> None:
@@ -274,12 +274,14 @@ def _push_ws_update(event_id: int) -> None:
     Background task — called after any score-changing commit.
     Opens a fresh DB session, builds the tournament payload, and pushes
     it to all WS clients currently watching that tournament.
-    Debounced: skips the rebuild if the same slug was pushed < 500 ms ago.
+    Also updates the HTTP page cache so polling clients immediately see
+    fresh data without waiting for the next cache TTL expiry.
+    Debounced: skips the rebuild if the same slug was pushed < 300 ms ago.
     """
     from app.database import SessionLocal
     from app.models.event import Event as _Event
     from app.ws.manager import manager
-    from app.routers.public import get_tournament_page
+    from app.routers.public import _build_tournament_page_data, _set_t_page_cache
     from sqlalchemy.orm import joinedload as _jl
 
     db = SessionLocal()
@@ -304,7 +306,10 @@ def _push_ws_update(event_id: int) -> None:
                 return
             _ws_last_push[slug] = now
 
-        data = get_tournament_page(slug, db)
+        # Build fresh data (bypasses HTTP cache) and push to WS clients.
+        # Also warm the HTTP cache so polling clients get the new data immediately.
+        data = _build_tournament_page_data(slug, db)
+        _set_t_page_cache(slug, data)
         manager.push(slug, data)
     except Exception as exc:
         import logging as _log
@@ -314,6 +319,25 @@ def _push_ws_update(event_id: int) -> None:
 
 
 # ── Routes ────────────────────────────────────────────────────
+
+@router.get("/matches/{match_id}")
+def get_match(
+    match_id: int,
+    db: Session = Depends(get_db),
+    _uid: int = Depends(get_current_user_id),
+):
+    """
+    Single-match fetch for the scorer screen.
+    Returns the match data + the event's sport_config so the scorer doesn't
+    have to load the entire workspace just to get one match.
+    """
+    match = _load_match(match_id, db)      # joinedloads participants + sets + event
+    data  = _serialize_match(match)
+    data["sport_config"] = match.event.sport_config
+    data["sport_key"]    = match.event.sport_key
+    data["event_id"]     = match.event_id
+    return data
+
 
 @router.get("/events/{event_id}/matches")
 def get_matches(event_id: int, db: Session = Depends(get_db)):

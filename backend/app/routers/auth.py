@@ -188,6 +188,46 @@ def _stage_reached_label(stage: str, won: bool) -> str:
     return _STAGE_LABELS.get(stage, stage.replace("_", " ").title())
 
 
+# ── Account deletion ──────────────────────────────────────────────────────────
+
+@router.delete("/me", status_code=204)
+def delete_account(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Permanently remove a user's personal data (GDPR / Google Play requirement).
+
+    Strategy: anonymise the User + Player rows so that existing tournament and
+    match history records (which reference player_id / user_id via FK) remain
+    intact.  The account becomes unreachable — email is replaced with a unique
+    sentinel, password hash and Google ID are cleared, and is_active is set to
+    False so no new token can be issued for the account.
+    """
+    import uuid
+    anon_suffix = uuid.uuid4().hex[:10]
+
+    # Anonymise PII on the Player profile (keep row for FK integrity)
+    player = db.query(Player).filter(Player.user_id == user.user_id).first()
+    if player:
+        player.name     = "Deleted User"
+        player.phone    = None
+        player.location = None
+        player.email    = f"deleted_{user.user_id}_{anon_suffix}@deleted.invalid"
+
+    # Remove org membership so they no longer have organiser access
+    db.query(OrgMember).filter(OrgMember.user_id == user.user_id).delete(synchronize_session=False)
+
+    # Anonymise the User row — wipe all PII, block future logins
+    user.email         = f"deleted_{user.user_id}_{anon_suffix}@deleted.invalid"
+    user.name          = "Deleted User"
+    user.phone         = None
+    user.password_hash = None
+    user.google_id     = None
+    user.avatar_url    = None
+    user.is_active     = False
+
+    db.commit()
+    # Return 204 No Content — client must clear its local token immediately
+
+
 def _best_finish_for_player(db: Session, player_ids: list[int], tournament_id: int) -> str | None:
     """Return the best finish label for these player_ids within a tournament."""
     rows = (

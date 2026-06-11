@@ -333,12 +333,7 @@ export default function CreateTournament() {
 
       <header className="site-header">
         <div className="header-row">
-          <div>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 3, color: "rgba(255,255,255,0.4)", marginBottom: 2 }}>
-              New Tournament
-            </div>
-            <span className="header-brand">The<span className="accent">Score</span>Board</span>
-          </div>
+          <span className="header-brand">The<span className="accent">Score</span>Board</span>
           <button className="btn btn-ghost btn-sm" onClick={() => navigate("/organiser")}>← Cancel</button>
         </div>
       </header>
@@ -406,7 +401,7 @@ export default function CreateTournament() {
                         }}>
                           {pState === "done" ? "✓" : n}
                         </div>
-                        <span style={{ fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginTop: 4, color: pState === "pending" ? c.muted : pState === "active" ? c.gold : c.orange, textAlign: "center", whiteSpace: "nowrap" }}>
+                        <span className="step-label" style={{ fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginTop: 4, color: pState === "pending" ? c.muted : pState === "active" ? c.gold : c.orange, textAlign: "center", whiteSpace: "nowrap" }}>
                           {label}
                         </span>
                       </div>
@@ -740,9 +735,9 @@ export default function CreateTournament() {
                   )}
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
-                  <button className="btn btn-outline" onClick={back}>← Back</button>
-                  <button className="btn btn-gradient btn-lg" style={{ fontSize: 13 }} onClick={handleCreate} disabled={loading}>
+                <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                  <button className="btn btn-outline" style={{ flexShrink: 0 }} onClick={back}>← Back</button>
+                  <button className="btn btn-gradient btn-lg" style={{ fontSize: 13, flex: 1 }} onClick={handleCreate} disabled={loading}>
                     {loading ? "Creating…" : "Create Tournament →"}
                   </button>
                 </div>

@@ -5,7 +5,7 @@ MatchSet         — individual set scores for set-based sports (TT, badminton).
 """
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, ForeignKey,
-    UniqueConstraint, CheckConstraint, JSON,
+    UniqueConstraint, CheckConstraint, JSON, Index,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -38,6 +38,12 @@ class Match(Base):
     # Cricket: {"current_over": 12.3, "current_innings": 1}
     # Football: {"half": 1, "minute": 34}
     live_state = Column(JSON, nullable=True)
+
+    # Compound indexes for common query patterns
+    __table_args__ = (
+        Index("ix_matches_event_status", "event_id", "status"),
+        Index("ix_matches_event_round",  "event_id", "stage", "round"),
+    )
 
     # Relationships
     event = relationship("Event", back_populates="matches")

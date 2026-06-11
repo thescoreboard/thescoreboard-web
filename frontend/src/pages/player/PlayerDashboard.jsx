@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getMe, getPlayerProfile, savePlayerProfile, clearToken,
-  getMyStats, getMyTournaments, setStoredUser, setMode,
+  getMyStats, getMyTournaments, setStoredUser, setMode, deleteAccount,
 } from "../../api/client";
 import OrgHeader from "../../components/shared/OrgHeader";
 import PageLoader from "../../components/shared/PageLoader";
@@ -672,6 +672,43 @@ export default function PlayerDashboard() {
               }}>
               Sign Out
             </button>
+
+            {/* Legal links */}
+            <div style={{ display:"flex", justifyContent:"center", gap:20, marginTop:16, flexWrap:"wrap" }}>
+              <a href="/privacy" target="_blank" rel="noopener noreferrer"
+                style={{ fontSize:12, color:"var(--muted)", textDecoration:"none" }}>Privacy Policy</a>
+              <a href="/terms" target="_blank" rel="noopener noreferrer"
+                style={{ fontSize:12, color:"var(--muted)", textDecoration:"none" }}>Terms of Service</a>
+            </div>
+
+            {/* Delete account */}
+            <div style={{ marginTop:20, paddingTop:20, borderTop:"1px solid var(--border)" }}>
+              <p style={{ fontSize:12, color:"var(--muted)", marginBottom:10, textAlign:"center" }}>
+                Deleting your account permanently removes your personal data.
+              </p>
+              <button
+                onClick={async () => {
+                  const confirmed = window.confirm(
+                    "Are you sure you want to delete your account?\n\nThis will permanently remove your personal data. Your tournament history will be anonymised. This action cannot be undone."
+                  );
+                  if (!confirmed) return;
+                  try {
+                    await deleteAccount();
+                    clearToken();
+                    navigate("/", { replace: true });
+                  } catch (e) {
+                    alert("Failed to delete account: " + (e.message || "Please try again."));
+                  }
+                }}
+                style={{
+                  width:"100%", padding:"12px", borderRadius:11,
+                  border:"1.5px solid rgba(229,62,62,.2)",
+                  background:"transparent", color:"#9ca3af",
+                  fontSize:12, cursor:"pointer", letterSpacing:0.3,
+                }}>
+                Delete Account
+              </button>
+            </div>
 
           </div>
         </div>

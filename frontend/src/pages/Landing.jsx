@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHomepageData, isLoggedIn, getMode } from "../api/client";
+import { getHomepageData, isLoggedIn, getMode, saveIntent } from "../api/client";
 import TournamentCard, { SPORT_LABELS } from "../components/shared/TournamentCard";
 
 const SPORTS_CONFIG = [
@@ -316,7 +316,7 @@ export default function Landing() {
               Find Tournaments →
             </button>
             <button
-              onClick={() => navigate(loggedIn ? (getMode() === "organiser" ? "/organiser" : "/player") : "/register")}
+              onClick={() => { if (!loggedIn) saveIntent("player"); navigate(loggedIn ? (getMode() === "organiser" ? "/organiser" : "/player") : "/register"); }}
               style={{
                 background: "none", color: "var(--ink)",
                 border: "2px solid var(--border)", borderRadius: 9, padding: "12px 28px",
@@ -330,6 +330,7 @@ export default function Landing() {
               {loggedIn ? "My Dashboard" : "Create Account"}
             </button>
           </div>
+
         </div>
 
         {/* Right: always-dark live panel */}
@@ -458,36 +459,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── STATS BAR ───────────────────────────────────────── */}
-      <div style={{ background: "var(--primary)", padding: "22px 24px" }}>
-        <div style={{
-          maxWidth: 1100, margin: "0 auto",
-          display: "grid", gap: 16, textAlign: "center",
-        }} className="stats-bar-grid">
-          {[
-            { value: totalTournaments > 0 ? `${totalTournaments}+` : "20+", label: "Tournaments" },
-            { value: totalPlayers     > 0 ? `${totalPlayers}+`     : "500+", label: "Players" },
-            { value: `${totalCities}+`,                                        label: "Cities" },
-            { value: SPORTS_CONFIG.length,                                     label: "Sports" },
-          ].map(stat => (
-            <div key={stat.label}>
-              <div style={{
-                fontFamily: "var(--font-display)", fontSize: "clamp(24px, 3vw, 34px)",
-                fontWeight: 900, color: "#fff", lineHeight: 1, letterSpacing: -1,
-              }}>
-                {stat.value}
-              </div>
-              <div style={{
-                fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
-                color: "rgba(255,255,255,0.65)", textTransform: "uppercase",
-                letterSpacing: 2.5, marginTop: 5,
-              }}>
-                {stat.label}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
       {/* ── TOURNAMENT SHOWCASE ─────────────────────────────── */}
       {(data === null || showcaseTournaments.length > 0) && (
@@ -846,7 +817,7 @@ export default function Landing() {
                 ))}
               </ul>
               <button
-                onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
+                onClick={() => { if (!loggedIn) saveIntent("organiser"); navigate(loggedIn ? "/organiser" : "/register"); }}
                 style={{
                   background: "#FF6B35", color: "#fff",
                   border: "none", borderRadius: 9, padding: "12px 28px",

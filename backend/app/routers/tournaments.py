@@ -222,25 +222,59 @@ def get_workspace(
         Event.tournament_id == tournament_id, Event.is_active == True
     ).all()
 
-    for event in events:
-        is_team_event = event.participant_type in ("team", "doubles_pair")
+    if events:
+        event_ids = [e.event_id for e in events]
 
-        # Groups
-        groups = db.query(Group).filter(Group.event_id == event.event_id).order_by(Group.name).all()
+        # ── Bulk queries (3 queries total regardless of event count) ──
+        all_groups = (
+            db.query(Group)
+            .filter(Group.event_id.in_(event_ids))
+            .order_by(Group.event_id, Group.name)
+            .all()
+        )
+        groups_by_event: dict = {}
+        for g in all_groups:
+            groups_by_event.setdefault(g.event_id, []).append(g)
 
-        # Single bulk query for ALL participants in this event — avoids N queries for N groups.
         all_eps = (
             db.query(EventParticipant)
-            .filter(EventParticipant.event_id == event.event_id)
+            .filter(EventParticipant.event_id.in_(event_ids))
             .options(
                 joinedload(EventParticipant.player),
                 joinedload(EventParticipant.team),
             )
             .all()
         )
-        eps_by_group: dict = {}
+        eps_by_event: dict = {}
         for ep in all_eps:
-            eps_by_group.setdefault(ep.group_id, []).append(ep)
+            eps_by_event.setdefault(ep.event_id, {}).setdefault(ep.group_id, []).append(ep)
+
+        all_matches = (
+            db.query(Match)
+            .filter(Match.event_id.in_(event_ids))
+            .options(
+                joinedload(Match.participants).joinedload(MatchParticipant.player),
+                joinedload(Match.participants).joinedload(MatchParticipant.team),
+                joinedload(Match.sets),
+            )
+            .order_by(Match.stage, Match.round, Match.match_id)
+            .all()
+        )
+        matches_by_event: dict = {}
+        for m in all_matches:
+            matches_by_event.setdefault(m.event_id, []).append(m)
+    else:
+        groups_by_event = {}
+        eps_by_event    = {}
+        matches_by_event = {}
+
+    for event in events:
+        is_team_event = event.participant_type in ("team", "doubles_pair")
+        eid           = event.event_id
+
+        groups        = groups_by_event.get(eid, [])
+        eps_by_group  = eps_by_event.get(eid, {})
+        matches       = matches_by_event.get(eid, [])
 
         groups_data = []
         for g in groups:
@@ -262,19 +296,7 @@ def get_workspace(
         # Ungrouped participants — already loaded above, just filter by group_id=None
         ungrouped = eps_by_group.get(None, [])
 
-        # Matches
-        matches = (
-            db.query(Match).filter(Match.event_id == event.event_id)
-            .options(
-                joinedload(Match.participants).joinedload(MatchParticipant.player),
-                joinedload(Match.participants).joinedload(MatchParticipant.team),
-                joinedload(Match.sets),
-            )
-            .order_by(Match.stage, Match.round, Match.match_id)
-            .all()
-        )
-
-        # Derive count from already-loaded data — avoids an extra COUNT(*) query per event
+        # Derive count from already-loaded data — no extra COUNT(*) per event
         grouped_count = sum(len(g["participants"]) for g in groups_data)
         participant_count = grouped_count + len(ungrouped)
         match_count  = len(matches)

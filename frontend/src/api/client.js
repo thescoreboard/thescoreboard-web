@@ -30,6 +30,17 @@ export function hasRole(role) {
 export function getMode() { return localStorage.getItem("tsb_mode") || "player"; }
 export function setMode(mode) { localStorage.setItem("tsb_mode", mode); }
 
+// ── Intent helpers ───────────────────────────────────────────────────────────
+// Call saveIntent('player'|'organiser') at CTA click time (e.g. "REGISTER TO
+// PLAY" → 'player', "ORGANISE" → 'organiser'). consumeIntent() reads + clears
+// it once in post-auth handlers to honour the CTA intent over stored mode.
+export function saveIntent(intent) { localStorage.setItem("tsb_intent", intent); }
+export function consumeIntent() {
+  const v = localStorage.getItem("tsb_intent");
+  if (v) localStorage.removeItem("tsb_intent");
+  return v; // 'player' | 'organiser' | null
+}
+
 // ── Post-login redirect helpers ─────────────────────────────────────────────
 // Call saveLoginRedirect(path) before sending a user to /login so that after
 // they authenticate they land where they originally intended, not /organiser.
@@ -79,6 +90,7 @@ export const getPlayerProfile  = ()  => request("GET", "/auth/player-profile");
 export const savePlayerProfile  = (d) => request("PUT",  "/auth/player-profile", d);
 export const getMyTournaments   = ()  => request("GET",  "/auth/my-tournaments");
 export const getMyStats         = ()  => request("GET",  "/auth/my-stats");
+export const deleteAccount      = ()  => request("DELETE", "/auth/me");
 
 // Orgs
 export const createOrg = (d) => request("POST", "/orgs/", d);

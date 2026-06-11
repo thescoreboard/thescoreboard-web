@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  login, setToken, consumeLoginRedirect,
+  login, setToken, consumeLoginRedirect, consumeIntent,
   getMe, setStoredUser, setMode,
 } from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
@@ -12,16 +12,22 @@ export default function Login() {
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
 
-  /** Fetch /auth/me, cache the user, then redirect based on role + stored mode. */
+  /** Fetch /auth/me, cache the user, then redirect based on intent → role → stored mode. */
   async function postAuthRedirect() {
     try {
       const u = await getMe();
       setStoredUser(u);
+      // Consume the intent set at CTA click time (e.g. "REGISTER TO PLAY" → 'player')
+      const intent = consumeIntent();
       const isOrganiser = Array.isArray(u?.roles) && u.roles.includes("organiser");
       if (!isOrganiser) {
-        // Player-only account — always land on player dashboard
+        // Player-only account — always land on player dashboard regardless of intent
         setMode("player");
         navigate(consumeLoginRedirect("/player"), { replace: true });
+      } else if (intent) {
+        // Organiser account with an explicit CTA intent — honour it
+        setMode(intent);
+        navigate(consumeLoginRedirect(intent === "organiser" ? "/organiser" : "/player"), { replace: true });
       } else {
         // Organiser: respect any previously saved mode preference.
         // If nothing stored yet (first login on this browser), default to organiser.

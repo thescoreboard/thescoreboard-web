@@ -38,7 +38,7 @@
    
      /* Gradients & Visuals */
      --gradient-bg:       linear-gradient(135deg, #FAFAFA 0%, #F5F5F5 100%);
-     --gradient-primary:  linear-gradient(135deg, #FF6B35 0%, #FFCC00 100%);
+     --gradient-primary:  #FF6B35;
      --gradient-glow:     radial-gradient(circle at 20% 50%, rgba(255, 107, 53, 0.08) 0%, transparent 60%);
      --card-live-bg:      linear-gradient(135deg, #FFF0E8 0%, var(--surface) 100%);
    
@@ -1336,10 +1336,11 @@
      }
    
      .progress-container {
-       overflow-x: auto;
-       margin: 0 -16px;
-       padding: 0 16px;
+       padding: 0 16px !important;
+       overflow: visible !important;
      }
+     /* Hide step text labels on mobile — circles + line only */
+     .step-label { display: none !important; }
    
      /* ── Event Workspace ──────────────────────────────────── */
      .event-actions {
@@ -1386,7 +1387,7 @@
      .header-search { order: 3; width: 100%; margin: 0 !important; }
      .live-badge { display: none !important; }
      .stats-grid { grid-template-columns: 1fr 1fr; }
-     .progress-container > div { min-width: 500px; }
+     .progress-container > div { min-width: unset; }
      .sport-selector-grid { grid-template-columns: 1fr !important; }
    
      /* ── OrgHeader Extra Small ────────────────────────────── */
@@ -1578,18 +1579,6 @@
 .landing-hero .highlight { color: var(--primary); }
 .landing-hero p { font-size: 18px; color: var(--muted); margin-bottom: 32px; max-width: 600px; margin-inline: auto; }
 
-/* Stats Bar */
-.landing-stats-bar { padding: 24px; background: var(--elevated); border-bottom: 1px solid var(--border); }
-.landing-stats-grid {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 32px;
-  text-align: center;
-}
-.stat-num { font-family: var(--font-display); font-size: 28px; font-weight: 900; color: var(--ink); }
-.stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
 
 /* Sports Grid */
 .landing-sports-section { padding: 60px 24px; background: var(--bg); }
@@ -1970,6 +1959,7 @@
   .hero-cta-row button { width: 100% !important; }
 }
 
+
 /* ── Landing header: hide live chip on small screens (live ticker already shows it) */
 @media (max-width: 480px) {
   .landing-live-chip { display: none !important; }
@@ -2053,7 +2043,6 @@
 }
 
 /* ── Content grids */
-.stats-bar-grid      { grid-template-columns: repeat(4, 1fr); }
 .steps-grid          { grid-template-columns: repeat(3, 1fr); }
 .testimonials-grid   { grid-template-columns: repeat(3, 1fr); }
 .dual-cta-grid       { grid-template-columns: 1fr 1fr; }
@@ -2077,12 +2066,6 @@
   }
   .hero-live-panel {
     display: none !important;
-  }
-
-  /* Stats bar: 2×2 */
-  .stats-bar-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 20px !important;
   }
 
   /* Collapse 3-col grids */
@@ -2110,8 +2093,18 @@
 }
 
 @media (max-width: 700px) {
-  /* Hero tighter padding */
-  .hero-split-left { padding: 40px 20px 36px !important; }
+  /* Hero mobile */
+  .hero-split-left { padding: 32px 20px 48px !important; }
+  /* Bigger headline */
+  .hero-split-left h1 {
+    font-size: 44px !important;
+    line-height: 1.02 !important;
+    margin-bottom: 28px !important;
+  }
+  /* More space around description */
+  .hero-split-left p { margin-bottom: 40px !important; }
+  /* Reset any auto margin */
+  .hero-cta-row { margin-top: 0 !important; }
 
   /* Section padding */
   .landing-section-pad {
@@ -2133,9 +2126,6 @@
 
   /* Testimonials card */
   .testimonials-card { padding: 22px 18px !important; }
-
-  /* Stats bar */
-  .stats-bar-grid { gap: 12px !important; }
 
   /* Sports cards */
   .sport-browse-card { min-height: 80px !important; }
