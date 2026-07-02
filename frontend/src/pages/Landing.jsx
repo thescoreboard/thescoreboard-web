@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHomepageData, isLoggedIn } from "../api/client";
+import { getHomepageData, isLoggedIn, getMode, saveIntent } from "../api/client";
 import TournamentCard, { SPORT_LABELS } from "../components/shared/TournamentCard";
 
 const SPORTS_CONFIG = [
@@ -10,7 +10,6 @@ const SPORTS_CONFIG = [
   { key: "badminton",    url: "badminton",    color: "#38bdf8", icon: "🏸" },
 ];
 
-const POLL_INTERVAL = 5000;
 
 const STEPS = [
   {
@@ -33,26 +32,6 @@ const STEPS = [
   },
 ];
 
-const TESTIMONIALS = [
-  {
-    name: "Arjun M.",
-    sport: "Badminton",
-    text: "Finally a platform that makes tracking local tournaments effortless. I found 3 tournaments in my area within minutes!",
-    rating: 5,
-  },
-  {
-    name: "Priya S.",
-    sport: "Table Tennis",
-    text: "The live score updates are brilliant. My family could follow my match in real-time even though they couldn't be there.",
-    rating: 5,
-  },
-  {
-    name: "Rohan K.",
-    sport: "Football",
-    text: "As a tournament organiser, the bracket management tool saved us hours. Everything just works seamlessly.",
-    rating: 5,
-  },
-];
 
 const navLinkStyle = {
   background: "none", border: "none", cursor: "pointer",
@@ -85,8 +64,6 @@ export default function Landing() {
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL);
-    return () => clearInterval(id);
   }, [fetchData]);
 
   useEffect(() => {
@@ -104,19 +81,12 @@ export default function Landing() {
 
   const sports     = data?.sports || [];
   const trending   = data?.trending || [];
-  const totalLive  = data?.total_live_matches || 0;
   const sportStats = {};
   sports.forEach(s => { sportStats[s.sport_key] = s; });
 
   const totalTournaments = sports.reduce((a, s) => a + (s.tournament_count || 0), 0);
   const totalPlayers     = sports.reduce((a, s) => a + (s.player_count    || 0), 0);
   const totalCities      = data?.total_cities || 12;
-
-  // Deduplicate live/featured tournaments for the hero panel (max 4)
-  const panelSeen = new Set();
-  const panelTournaments = [...trending, ...sports.flatMap(s => s.tournaments || [])]
-    .filter(t => { if (panelSeen.has(t.tournament_id)) return false; panelSeen.add(t.tournament_id); return true; })
-    .slice(0, 4);
 
   // Showcase grid (below hero) — up to 6
   const gridSeen = new Set();
@@ -181,23 +151,6 @@ export default function Landing() {
 
           {/* Right actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {/* Live chip — desktop */}
-            {totalLive > 0 && (
-              <div style={{
-                display: "flex", alignItems: "center", gap: 6,
-                background: "rgba(255,107,53,0.1)", color: "var(--primary)",
-                padding: "5px 10px", borderRadius: 6,
-                fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-                letterSpacing: 1.5, textTransform: "uppercase",
-              }} className="landing-live-chip landing-nav">
-                <span style={{
-                  width: 6, height: 6, borderRadius: "50%",
-                  background: "var(--primary)", animation: "pulse 1.5s infinite", display: "inline-block",
-                }}/>
-                {totalLive} Live
-              </div>
-            )}
-
             {/* Theme toggle */}
             <button
               onClick={toggleTheme}
@@ -223,33 +176,28 @@ export default function Landing() {
               )}
             </button>
 
-            {/* Login button — only when logged out, hidden on mobile */}
-            {!loggedIn && (
+            {/* Auth / dashboard actions */}
+            {loggedIn ? (
+              /* Logged in — go to their current-mode dashboard */
+              <button
+                onClick={() => navigate(getMode() === "organiser" ? "/organiser" : "/player")}
+                className="landing-cta-btn"
+                onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+              >
+                Dashboard →
+              </button>
+            ) : (
+              /* Logged out — Sign In only */
               <button
                 onClick={() => navigate("/login")}
-                style={{
-                  background: "none", border: "1px solid var(--border)",
-                  color: "var(--ink)", borderRadius: 7, padding: "7px 14px",
-                  fontFamily: "var(--font-body)", fontSize: 13, fontWeight: 700,
-                  cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.2s",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--ink)"; }}
-                className="landing-login-btn"
+                className="landing-cta-btn"
+                onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
               >
-                Login
+                Sign In
               </button>
             )}
-
-            {/* Organise / Dashboard CTA */}
-            <button
-              onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
-              className="landing-cta-btn"
-              onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
-            >
-              {loggedIn ? "Dashboard" : "Organise →"}
-            </button>
           </div>
         </div>
       </header>
@@ -261,8 +209,8 @@ export default function Landing() {
         <div className="hero-split-left">
           {/* Background glow */}
           <div style={{
-            position: "absolute", top: -80, left: -80,
-            width: 480, height: 480, borderRadius: "50%",
+            position: "absolute", top: -80, left: "50%", transform: "translateX(-50%)",
+            width: 600, height: 480, borderRadius: "50%",
             background: "radial-gradient(circle, rgba(255,107,53,0.07) 0%, transparent 65%)",
             pointerEvents: "none",
           }}/>
@@ -274,20 +222,20 @@ export default function Landing() {
             borderRadius: 6, padding: "5px 12px",
             fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
             letterSpacing: 2, textTransform: "uppercase",
-            marginBottom: 24, alignSelf: "flex-start",
+            marginBottom: 24,
             animation: "fadeUp 0.4s ease both",
           }}>
             <span style={{
               width: 6, height: 6, borderRadius: "50%",
               background: "var(--primary)", animation: "pulse 1.5s infinite", display: "inline-block",
             }}/>
-            {totalLive > 0 ? `${totalLive} Matches Live Now` : "Live Tournament Platform"}
+            Live Tournament Platform
           </div>
 
           <h1 style={{
-            fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 56px)",
-            fontWeight: 900, lineHeight: 1.05, letterSpacing: "clamp(-1.5px, -0.3vw, -2.5px)",
-            color: "var(--ink)", marginBottom: 20,
+            fontFamily: "var(--font-display)", fontSize: "clamp(36px, 6.5vw, 80px)",
+            fontWeight: 900, lineHeight: 1.02, letterSpacing: "clamp(-1.5px, -0.3vw, -3px)",
+            color: "var(--ink)", marginBottom: 24,
             animation: "fadeUp 0.4s ease 0.1s both",
           }}>
             Your Local Sports Scene,{" "}
@@ -295,15 +243,15 @@ export default function Landing() {
           </h1>
 
           <p style={{
-            fontSize: "clamp(14px, 2vw, 17px)", color: "var(--muted)", lineHeight: 1.75,
-            marginBottom: 36, maxWidth: 480,
+            fontSize: "clamp(15px, 1.5vw, 19px)", color: "var(--muted)", lineHeight: 1.75,
+            marginBottom: 40, maxWidth: 620,
             animation: "fadeUp 0.4s ease 0.2s both",
           }}>
             Find local tournaments, register to compete, and follow live scores — all in one place. Built for grassroots sports communities.
           </p>
 
           <div style={{
-            display: "flex", gap: 12, flexWrap: "wrap",
+            display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center",
             animation: "fadeUp 0.4s ease 0.3s both",
           }} className="hero-cta-row">
             <button
@@ -321,7 +269,7 @@ export default function Landing() {
               Find Tournaments →
             </button>
             <button
-              onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
+              onClick={() => { if (!loggedIn) saveIntent("player"); navigate(loggedIn ? (getMode() === "organiser" ? "/organiser" : "/player") : "/register"); }}
               style={{
                 background: "none", color: "var(--ink)",
                 border: "2px solid var(--border)", borderRadius: 9, padding: "12px 28px",
@@ -332,167 +280,36 @@ export default function Landing() {
               onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--ink)"; }}
             >
-              {loggedIn ? "Dashboard" : "Organise a Tournament"}
+              {loggedIn ? "My Dashboard" : "Create Account"}
             </button>
           </div>
-        </div>
 
-        {/* Right: always-dark live panel */}
-        <div
-          data-theme="dark"
-          style={{
-            background: "#111111",
-            display: "flex", flexDirection: "column",
-            padding: "32px 28px",
-            borderLeft: "1px solid rgba(255,255,255,0.06)",
-            overflowY: "auto",
-          }}
-          className="hero-live-panel"
-        >
-          {/* Panel header */}
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            marginBottom: 20,
-          }}>
-            <div style={{
-              fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 900,
-              textTransform: "uppercase", letterSpacing: 2,
-              color: "rgba(255,255,255,0.4)",
-            }}>
-              {totalLive > 0 ? "Live Now" : "Featured"}
-            </div>
-            {totalLive > 0 && (
-              <div style={{
-                display: "flex", alignItems: "center", gap: 5,
-                background: "rgba(255,107,53,0.15)", color: "#FF6B35",
-                borderRadius: 5, padding: "3px 9px",
-                fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
-                letterSpacing: 1.5, textTransform: "uppercase",
-              }}>
-                <span style={{
-                  width: 5, height: 5, borderRadius: "50%",
-                  background: "#FF6B35", animation: "pulse 1.5s infinite", display: "inline-block",
-                }}/>
-                {totalLive} Live
-              </div>
-            )}
-          </div>
-
-          {/* Tournament cards */}
-          {panelTournaments.length === 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {[...Array(3)].map((_, i) => (
-                <div key={i} style={{
-                  borderRadius: 10, padding: "16px",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                }}>
-                  <div className="skeleton" style={{ height: 8, width: "40%", marginBottom: 8, background: "rgba(255,255,255,0.08)" }}/>
-                  <div className="skeleton" style={{ height: 14, width: "70%", background: "rgba(255,255,255,0.06)" }}/>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {panelTournaments.map(t => {
-                const sportCfg = SPORTS_CONFIG.find(s => s.key === t.sport_key) || SPORTS_CONFIG[0];
-                const isLive   = t.status === "live";
-                return (
-                  <div
-                    key={t.tournament_id}
-                    onClick={() => navigate(`/t/${t.slug}`)}
-                    style={{
-                      borderRadius: 10, padding: "14px 16px",
-                      background: "rgba(255,255,255,0.04)",
-                      border: `1px solid ${isLive ? sportCfg.color + "45" : "rgba(255,255,255,0.08)"}`,
-                      cursor: "pointer", transition: "all 0.2s",
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.transform = "translateX(3px)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.transform = "none"; }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
-                      <span style={{
-                        fontSize: 9, fontWeight: 800, fontFamily: "var(--font-display)",
-                        textTransform: "uppercase", letterSpacing: 1.5,
-                        color: sportCfg.color, background: sportCfg.color + "18",
-                        borderRadius: 4, padding: "2px 7px",
-                      }}>
-                        {SPORT_LABELS[t.sport_key] || t.sport_key}
-                      </span>
-                      {isLive && (
-                        <span style={{
-                          fontSize: 8, fontWeight: 800, fontFamily: "var(--font-display)",
-                          textTransform: "uppercase", letterSpacing: 1.5, color: "#FF6B35",
-                        }}>
-                          ● LIVE
-                        </span>
-                      )}
-                    </div>
-                    <div style={{
-                      fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 800,
-                      color: "#fff", lineHeight: 1.3, letterSpacing: -0.3,
-                    }}>
-                      {t.name}
-                    </div>
-                    {t.city && (
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 5 }}>
-                        📍 {t.city}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <button
-            onClick={() => navigate("/tournaments")}
+          {/* Instagram — below CTAs */}
+          <a
+            href="https://www.instagram.com/thescoreboard.in/"
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
-              marginTop: "auto", paddingTop: 24,
-              background: "none", border: "none",
-              color: "rgba(255,255,255,0.35)", fontSize: 11,
-              fontFamily: "var(--font-display)", fontWeight: 800,
-              textTransform: "uppercase", letterSpacing: 2,
-              cursor: "pointer", transition: "color 0.2s", textAlign: "center",
+              display: "inline-flex", alignItems: "center", gap: 7,
+              marginTop: 28, textDecoration: "none",
+              color: "var(--muted)", fontSize: 13, fontWeight: 600,
+              transition: "color 0.2s",
             }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#FF6B35"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.35)"; }}
+            onMouseEnter={e => e.currentTarget.style.color = "#E1306C"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--muted)"}
           >
-            View All Tournaments →
-          </button>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+              <circle cx="12" cy="12" r="4"/>
+              <circle cx="17.5" cy="6.5" r="0.5" fill="currentColor"/>
+            </svg>
+            @thescoreboard.in
+          </a>
+
         </div>
+
       </section>
 
-      {/* ── STATS BAR ───────────────────────────────────────── */}
-      <div style={{ background: "var(--primary)", padding: "22px 24px" }}>
-        <div style={{
-          maxWidth: 1100, margin: "0 auto",
-          display: "grid", gap: 16, textAlign: "center",
-        }} className="stats-bar-grid">
-          {[
-            { value: totalTournaments > 0 ? `${totalTournaments}+` : "20+", label: "Tournaments" },
-            { value: totalPlayers     > 0 ? `${totalPlayers}+`     : "500+", label: "Players" },
-            { value: `${totalCities}+`,                                        label: "Cities" },
-            { value: SPORTS_CONFIG.length,                                     label: "Sports" },
-          ].map(stat => (
-            <div key={stat.label}>
-              <div style={{
-                fontFamily: "var(--font-display)", fontSize: "clamp(24px, 3vw, 34px)",
-                fontWeight: 900, color: "#fff", lineHeight: 1, letterSpacing: -1,
-              }}>
-                {stat.value}
-              </div>
-              <div style={{
-                fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
-                color: "rgba(255,255,255,0.65)", textTransform: "uppercase",
-                letterSpacing: 2.5, marginTop: 5,
-              }}>
-                {stat.label}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
       {/* ── TOURNAMENT SHOWCASE ─────────────────────────────── */}
       {(data === null || showcaseTournaments.length > 0) && (
@@ -513,19 +330,14 @@ export default function Landing() {
                   textTransform: "uppercase", letterSpacing: 3,
                   color: "var(--primary)", marginBottom: 8,
                 }}>
-                  {totalLive > 0 ? "Happening Now" : "Featured Tournaments"}
+                  Featured Tournaments
                 </div>
                 <div style={{
                   fontFamily: "var(--font-display)", fontSize: "clamp(22px,3vw,32px)",
                   fontWeight: 900, color: "var(--ink)", letterSpacing: -1.5,
                 }}>
-                  {totalLive > 0 ? "Live & Featured" : "Discover Tournaments"}
+                  Discover Tournaments
                 </div>
-                {totalLive > 0 && (
-                  <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>
-                    {totalLive} match{totalLive !== 1 ? "es" : ""} in progress right now
-                  </div>
-                )}
               </div>
               <button
                 onClick={() => navigate("/tournaments")}
@@ -656,89 +468,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── TESTIMONIALS ────────────────────────────────────── */}
-      <section style={{
-        padding: "72px 24px",
-        background: "var(--surface)",
-        borderTop: "2px solid var(--border)",
-      }} className="landing-section-pad">
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 48 }}>
-            <div style={{
-              fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-              textTransform: "uppercase", letterSpacing: 3,
-              color: "var(--primary)", marginBottom: 12,
-            }}>
-              Community Stories
-            </div>
-            <h2 style={{
-              fontFamily: "var(--font-display)", fontSize: "clamp(24px,3vw,38px)",
-              fontWeight: 900, letterSpacing: -1.5, color: "var(--ink)",
-            }}>
-              Players love it
-            </h2>
-          </div>
-
-          <div style={{ display: "grid", gap: 20 }} className="testimonials-grid">
-            {TESTIMONIALS.map((t, i) => (
-              <div
-                key={i}
-                className="testimonials-card"
-                style={{
-                  padding: "28px 24px", borderRadius: 14,
-                  border: "1.5px solid var(--border)",
-                  background: "var(--bg)", transition: "all 0.2s",
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = "var(--primary)";
-                  e.currentTarget.style.boxShadow = "0 4px 24px rgba(255,107,53,0.09)";
-                  e.currentTarget.style.transform = "translateY(-3px)";
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = "var(--border)";
-                  e.currentTarget.style.boxShadow = "none";
-                  e.currentTarget.style.transform = "none";
-                }}
-              >
-                <div style={{ marginBottom: 16 }}>
-                  {[...Array(t.rating)].map((_, j) => (
-                    <span key={j} style={{ color: "#FF6B35", fontSize: 15 }}>★</span>
-                  ))}
-                </div>
-                <p style={{
-                  fontSize: 14, color: "var(--ink)", lineHeight: 1.8,
-                  marginBottom: 20, fontStyle: "italic", opacity: 0.8,
-                }}>
-                  "{t.text}"
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: "50%",
-                    background: "var(--primary)", color: "#fff",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 900,
-                    flexShrink: 0,
-                  }}>
-                    {t.name[0]}
-                  </div>
-                  <div>
-                    <div style={{
-                      fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
-                      color: "var(--ink)", letterSpacing: -0.3,
-                    }}>
-                      {t.name}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>
-                      {t.sport} Player
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── DUAL CTA ────────────────────────────────────────── */}
       <section style={{
         padding: "72px 24px",
@@ -851,7 +580,7 @@ export default function Landing() {
                 ))}
               </ul>
               <button
-                onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
+                onClick={() => { if (!loggedIn) saveIntent("organiser"); navigate(loggedIn ? "/organiser" : "/register"); }}
                 style={{
                   background: "#FF6B35", color: "#fff",
                   border: "none", borderRadius: 9, padding: "12px 28px",
@@ -862,7 +591,7 @@ export default function Landing() {
                 onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(255,107,53,0.4)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
               >
-                {loggedIn ? "Go to Dashboard →" : "Start Organising →"}
+                {loggedIn ? "Organiser Dashboard →" : "Start Organising →"}
               </button>
             </div>
           </div>
@@ -905,7 +634,6 @@ export default function Landing() {
             {SPORTS_CONFIG.map(sport => {
               const stats      = sportStats[sport.key];
               const tournCount = stats?.tournament_count || 0;
-              const liveCount  = stats?.live_count || 0;
               return (
                 <div
                   key={sport.key}
@@ -960,20 +688,6 @@ export default function Landing() {
                       }}>
                         {tournCount > 0 ? `${tournCount} tournament${tournCount !== 1 ? "s" : ""}` : "Coming soon"}
                       </span>
-                      {liveCount > 0 && (
-                        <span style={{
-                          display: "flex", alignItems: "center", gap: 4,
-                          fontSize: 10, fontWeight: 800, color: sport.color,
-                          textTransform: "uppercase", letterSpacing: 1, whiteSpace: "nowrap",
-                        }}>
-                          <span style={{
-                            width: 6, height: 6, borderRadius: "50%",
-                            background: sport.color, animation: "pulse 1.5s infinite",
-                            display: "inline-block",
-                          }}/>
-                          {liveCount} live
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1008,6 +722,41 @@ export default function Landing() {
             <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.85, maxWidth: 260 }}>
               Live tournament scores for every sport. Built for communities, trusted by organizers.
             </p>
+            {/* Instagram */}
+            <a
+              href="https://www.instagram.com/thescoreboard.in/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 7,
+                marginTop: 16, textDecoration: "none",
+                color: "#E1306C", fontSize: 13, fontWeight: 700,
+                transition: "opacity 0.2s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
+              onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                <circle cx="12" cy="12" r="4"/>
+                <circle cx="17.5" cy="6.5" r="0.5" fill="currentColor"/>
+              </svg>
+              @thescoreboard.in
+            </a>
+            {/* About Us */}
+            <div style={{ marginTop: 12 }}>
+              <a
+                onClick={() => navigate("/about")}
+                style={{
+                  cursor: "pointer", fontSize: 13, fontWeight: 700,
+                  color: "var(--ink)", textDecoration: "none",
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = "var(--primary)"}
+                onMouseLeave={e => e.currentTarget.style.color = "var(--ink)"}
+              >
+                About Us →
+              </a>
+            </div>
           </div>
           {[
             {
@@ -1049,23 +798,25 @@ export default function Landing() {
         </div>
       </footer>
 
-      {/* ── FAB (mobile only) ───────────────────────────────── */}
-      <button
-        onClick={() => navigate(loggedIn ? "/organiser" : "/register")}
-        style={{
-          position: "fixed", bottom: 24, right: 20, zIndex: 100,
-          display: "flex", alignItems: "center", gap: 8,
-          background: "var(--primary)", color: "#fff",
-          border: "none", borderRadius: 50, padding: "13px 22px",
-          fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
-          textTransform: "uppercase", letterSpacing: 1,
-          boxShadow: "0 4px 20px rgba(255,107,53,0.5)", cursor: "pointer",
-          transition: "all 0.2s",
-        }}
-        className="fab-hide-desktop"
-      >
-        + Organise
-      </button>
+      {/* ── FAB (mobile only, logged-in users only) ─────────── */}
+      {loggedIn && (
+        <button
+          onClick={() => navigate(getMode() === "organiser" ? "/organiser" : "/player")}
+          style={{
+            position: "fixed", bottom: 24, right: 20, zIndex: 100,
+            display: "flex", alignItems: "center", gap: 8,
+            background: "var(--primary)", color: "#fff",
+            border: "none", borderRadius: 50, padding: "13px 22px",
+            fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
+            textTransform: "uppercase", letterSpacing: 1,
+            boxShadow: "0 4px 20px rgba(255,107,53,0.5)", cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          className="fab-hide-desktop"
+        >
+          Dashboard →
+        </button>
+      )}
     </div>
   );
 }

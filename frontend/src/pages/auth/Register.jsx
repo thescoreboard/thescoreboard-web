@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  register, setToken, consumeLoginRedirect,
+  register, setToken, consumeLoginRedirect, consumeIntent,
   getMe, setStoredUser, setMode,
 } from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
@@ -13,7 +13,8 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
 
   /**
-   * New accounts have no org yet → roles = ["player"] → land on player dashboard.
+   * New accounts have no org yet → roles = ["player"].
+   * Honour the CTA intent (player/organiser) if present; otherwise default to player.
    * We still honour tsb_next in case the user was redirected here from a specific page.
    */
   async function postRegisterRedirect() {
@@ -21,8 +22,10 @@ export default function Register() {
       const u = await getMe();
       setStoredUser(u);
     } catch { /* ignore — token is set, user will be fetched on next load */ }
-    setMode("player");
-    navigate(consumeLoginRedirect("/player"), { replace: true });
+    const intent = consumeIntent();
+    const mode = intent || "player"; // new accounts default to player
+    setMode(mode);
+    navigate(consumeLoginRedirect(mode === "organiser" ? "/organiser" : "/player"), { replace: true });
   }
 
   const handleSubmit = async () => {
@@ -105,8 +108,16 @@ export default function Register() {
           </div>
         )}
 
+        {/* Legal agreement */}
+        <p style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", marginBottom: 14, lineHeight: 1.6 }}>
+          By creating an account you agree to our{" "}
+          <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", textDecoration: "none", fontWeight: 600 }}>Terms of Service</a>
+          {" "}and{" "}
+          <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", textDecoration: "none", fontWeight: 600 }}>Privacy Policy</a>.
+        </p>
+
         <button className="btn btn-gradient btn-lg"
-          style={{ width: "100%", marginTop: 4, background: "var(--primary)", color: "#FFF", padding: "14px", borderRadius: "8px", border: "none", fontWeight: "bold", cursor: "pointer" }}
+          style={{ width: "100%", marginTop: 0, background: "var(--primary)", color: "#FFF", padding: "14px", borderRadius: "8px", border: "none", fontWeight: "bold", cursor: "pointer" }}
           onClick={handleSubmit} disabled={loading}>
           {loading ? "Creating account…" : "Create Account →"}
         </button>

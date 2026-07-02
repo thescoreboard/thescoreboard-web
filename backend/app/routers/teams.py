@@ -15,6 +15,7 @@ from app.models.organization import Organization, OrgMember
 from app.models.event import Event
 from app.models.tournament import Tournament
 from app.utils.auth import get_current_user
+from app.utils.ratelimit import public_registration_limiter
 
 router = APIRouter()
 
@@ -254,7 +255,8 @@ class PublicTeamRegistration(BaseModel):
     members:       List[TeamMemberIn]
 
 
-@router.post("/public/tournaments/{tournament_id}/register-team")
+@router.post("/public/tournaments/{tournament_id}/register-team",
+             dependencies=[Depends(public_registration_limiter)])
 def public_register_team(
     tournament_id: int,
     data: PublicTeamRegistration,

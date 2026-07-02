@@ -13,6 +13,7 @@ from app.models.event import Event
 from app.models.match import Match, MatchParticipant, MatchSet
 from app.models.group import EventParticipant
 from app.models.player import Player, Team
+from app.utils.ratelimit import public_registration_limiter
 
 from pydantic import BaseModel
 
@@ -23,6 +24,30 @@ router = APIRouter()
 # 30-second TTL: data stays fresh enough while massively reducing DB load.
 _homepage_cache: dict = {"data": None, "ts": 0.0}
 HOMEPAGE_TTL = 30  # seconds
+
+# ── Per-slug tournament page cache ───────────────────────────────────────────
+# Each live score update triggers a WS broadcast + potentially several HTTP
+# polls all hitting the same 3-query tournament-page rebuild simultaneously.
+# A 5-second TTL coalesces bursts of reads without going stale for viewers
+# (WS push always bypasses this cache and writes fresh data into it).
+_t_page_cache: dict = {}   # slug → {"data": dict, "ts": float}
+_T_PAGE_TTL = 5.0           # seconds
+
+
+def _get_t_page_cache(slug: str) -> dict | None:
+    entry = _t_page_cache.get(slug)
+    if entry and (time.time() - entry["ts"]) < _T_PAGE_TTL:
+        return entry["data"]
+    return None
+
+
+def _set_t_page_cache(slug: str, data: dict) -> None:
+    _t_page_cache[slug] = {"data": data, "ts": time.time()}
+
+
+def invalidate_tournament_cache(slug: str) -> None:
+    """Called by the WS push task so the next HTTP poll sees fresh data."""
+    _t_page_cache.pop(slug, None)
 
 
 def _serialize_participants(event_id: int, db: Session) -> list:
@@ -479,8 +504,14 @@ def browse_tournaments(
 
 # ── Tournament detail (all sports) ───────────────────────────
 
-@router.get("/t/{slug}")
-def get_tournament_page(slug: str, db: Session = Depends(get_db)):
+def _build_tournament_page_data(slug: str, db: Session) -> dict:
+    """
+    Core data-fetching for the tournament page — always reads fresh from DB.
+    Adds `sport_key` to every serialized match so mobile clients can pick the
+    correct card renderer without looking up the parent event separately.
+    Called by the HTTP route handler (which caches the result) and by the WS
+    push task (which needs fresh data every time).
+    """
     tournament = (
         db.query(Tournament)
         .filter(Tournament.slug == slug)
@@ -530,6 +561,14 @@ def get_tournament_page(slug: str, db: Session = Depends(get_db)):
     for ep in all_eps:
         eps_by_event[ep.event_id].append(ep)
 
+    # sport_key per match: avoids the mobile needing to look up parent event
+    sport_by_event: dict[int, str] = {e.event_id: e.sport_key for e in active_events}
+
+    def _sm(m: Match) -> dict:
+        d = _serialize_match(m)
+        d["sport_key"] = sport_by_event.get(m.event_id, "")
+        return d
+
     events_data = []
     for event in active_events:
         matches = matches_by_event[event.event_id]
@@ -566,8 +605,8 @@ def get_tournament_page(slug: str, db: Session = Depends(get_db)):
             "squad_size":        event.squad_size,
             "total_matches":     len(matches),
             "completed_matches": sum(1 for m in matches if m.status == "done"),
-            "live_matches":      [_serialize_match(m) for m in matches if m.status == "live"],
-            "all_matches":       [_serialize_match(m) for m in matches],
+            "live_matches":      [_sm(m) for m in matches if m.status == "live"],
+            "all_matches":       [_sm(m) for m in matches],
             "participants":      participants,
         })
 
@@ -592,12 +631,34 @@ def get_tournament_page(slug: str, db: Session = Depends(get_db)):
             "tournament_info": tournament.tournament_info,
             "org_name":        tournament.organization.name if tournament.organization else None,
             "sponsors": [
-                {"sponsor_id": s.sponsor_id, "name": s.name, "logo_url": s.logo_url, "tier": s.tier}
+                {
+                    "sponsor_id":  s.sponsor_id,
+                    "name":        s.name,
+                    "logo_url":    s.logo_url,
+                    "tier":        s.tier,
+                    "website":     s.website,
+                    "description": s.description,
+                }
                 for s in tournament.sponsors
             ],
         },
         "events": events_data,
     }
+
+
+@router.get("/t/{slug}")
+def get_tournament_page(slug: str, db: Session = Depends(get_db)):
+    """
+    Public tournament page — served from a 5-second per-slug in-memory cache.
+    The WS push task always fetches fresh data and writes it back into the cache,
+    so HTTP pollers always see data that is at most one WS cycle old (≤5 s).
+    """
+    cached = _get_t_page_cache(slug)
+    if cached is not None:
+        return cached
+    data = _build_tournament_page_data(slug, db)
+    _set_t_page_cache(slug, data)
+    return data
 
 
 # ── Tournament detail (sport-filtered) ───────────────────────
@@ -678,6 +739,11 @@ def get_tournament_by_sport(
                     "group": ep.group.name if ep.group else None,
                 })
 
+        def _sm_sport(m: Match) -> dict:
+            d = _serialize_match(m)
+            d["sport_key"] = event.sport_key
+            return d
+
         events_data.append({
             "event_id":          event.event_id,
             "name":              event.name,
@@ -691,8 +757,8 @@ def get_tournament_by_sport(
             "squad_size":        event.squad_size,
             "total_matches":     len(matches),
             "completed_matches": sum(1 for m in matches if m.status == "done"),
-            "live_matches":      [_serialize_match(m) for m in matches if m.status == "live"],
-            "all_matches":       [_serialize_match(m) for m in matches],
+            "live_matches":      [_sm_sport(m) for m in matches if m.status == "live"],
+            "all_matches":       [_sm_sport(m) for m in matches],
             "participants":      participants,
         })
 
@@ -715,7 +781,14 @@ def get_tournament_by_sport(
             "end_date":        str(tournament.end_date) if tournament.end_date else None,
             "org_name":        tournament.organization.name if tournament.organization else None,
             "sponsors": [
-                {"sponsor_id": s.sponsor_id, "name": s.name, "logo_url": s.logo_url, "tier": s.tier}
+                {
+                    "sponsor_id":  s.sponsor_id,
+                    "name":        s.name,
+                    "logo_url":    s.logo_url,
+                    "tier":        s.tier,
+                    "website":     s.website,
+                    "description": s.description,
+                }
                 for s in tournament.sponsors
             ],
         },
@@ -752,7 +825,8 @@ def search(q: str, db: Session = Depends(get_db)):
 
 # ── Public registration ───────────────────────────────────────
 
-@router.post("/tournaments/{tournament_id}/register")
+@router.post("/tournaments/{tournament_id}/register",
+             dependencies=[Depends(public_registration_limiter)])
 def public_register(
     tournament_id: int,
     data: PublicRegistration,
@@ -771,11 +845,13 @@ def public_register(
             detail="This tournament is not currently accepting registrations",
         )
 
-    # Deduplicate by phone
+    # Look up existing player by phone within this org only.
+    # We scope to org_id to avoid matching a phone that belongs to a different org's player.
     player = None
     if data.phone:
         player = db.query(Player).filter(
-            Player.phone == data.phone.strip()
+            Player.phone == data.phone.strip(),
+            Player.org_id == tournament.org_id,
         ).first()
 
     if not player:
@@ -789,18 +865,16 @@ def public_register(
         db.add(player)
         db.flush()
 
-    # Resolve target events
-    if data.event_ids:
-        target_events = db.query(Event).filter(
-            Event.tournament_id == tournament_id,
-            Event.event_id.in_(data.event_ids),
-            Event.is_active == True,
-        ).all()
-    else:
-        target_events = db.query(Event).filter(
-            Event.tournament_id == tournament_id,
-            Event.is_active == True,
-        ).all()
+    # Resolve target events — require explicit selection (no silent enroll-all)
+    if not data.event_ids:
+        raise HTTPException(status_code=400, detail="Please select at least one event to register for.")
+    target_events = db.query(Event).filter(
+        Event.tournament_id == tournament_id,
+        Event.event_id.in_(data.event_ids),
+        Event.is_active == True,
+    ).all()
+    if not target_events:
+        raise HTTPException(status_code=400, detail="No valid events found for the given event_ids.")
 
     enrolled = []
     for event in target_events:

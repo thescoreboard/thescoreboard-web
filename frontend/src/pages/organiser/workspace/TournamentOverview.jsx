@@ -63,6 +63,13 @@ export default function TournamentOverview() {
   if (!data) return <PageLoader />;
 
   const { tournament: t, events, stats } = data;
+
+  // Single-sport with one configured event → skip this page, go straight to workspace
+  if (!t.is_multi_sport && events.length === 1 && events[0].is_configured !== false) {
+    navigate(`/organiser/tournament/${t.tournament_id}/event/${events[0].event_id}`, { replace: true });
+    return null;
+  }
+
   const currentIdx = LIFECYCLE.indexOf(t.status);
 
   const unconfiguredCount = events.filter(ev => ev.is_configured === false).length;
@@ -82,6 +89,7 @@ export default function TournamentOverview() {
       <OrgHeader
         user={user}
         onLogout={() => { clearToken(); navigate("/", { replace: true }); }}
+        hideModePill={true}
         crumbs={[
           { label: "My Tournaments", path: "/organiser" },
           { label: t.name },

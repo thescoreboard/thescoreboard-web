@@ -5,7 +5,7 @@ MatchSet         — individual set scores for set-based sports (TT, badminton).
 """
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, ForeignKey,
-    UniqueConstraint, CheckConstraint, JSON,
+    UniqueConstraint, CheckConstraint, JSON, Index,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -39,6 +39,12 @@ class Match(Base):
     # Football: {"half": 1, "minute": 34}
     live_state = Column(JSON, nullable=True)
 
+    # Compound indexes for common query patterns
+    __table_args__ = (
+        Index("ix_matches_event_status", "event_id", "status"),
+        Index("ix_matches_event_round",  "event_id", "stage", "round"),
+    )
+
     # Relationships
     event = relationship("Event", back_populates="matches")
     group = relationship("Group", back_populates="matches")
@@ -66,8 +72,8 @@ class MatchParticipant(Base):
     match_id = Column(Integer, ForeignKey("matches.match_id", ondelete="CASCADE"), nullable=False, index=True)
 
     # One of these is set
-    player_id = Column(Integer, ForeignKey("players.player_id", ondelete="CASCADE"), nullable=True)
-    team_id = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=True)
+    player_id = Column(Integer, ForeignKey("players.player_id", ondelete="CASCADE"), nullable=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.team_id", ondelete="CASCADE"), nullable=True, index=True)
 
     position = Column(Integer, nullable=False)  # 1 or 2
     score = Column(Integer, default=0)           # aggregate / total score

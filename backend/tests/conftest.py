@@ -1,0 +1,36 @@
+"""
+Test fixtures — in-memory SQLite so tests never touch the real database.
+
+DATABASE_URL is forced BEFORE any app import: app.config runs load_dotenv()
+at import time, and load_dotenv never overrides variables that already exist
+in the environment, so this shields tests from backend/.env.
+"""
+import os
+
+os.environ["DATABASE_URL"] = "sqlite://"
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.database import Base
+# Import every model module so Base.metadata knows all tables
+from app.models import user, organization, tournament, event, group, player, match  # noqa: F401
+
+
+@pytest.fixture()
+def db():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    session = Session()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()

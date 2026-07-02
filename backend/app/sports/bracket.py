@@ -202,6 +202,31 @@ def assign_players_to_groups(
     return groups
 
 
+# ── Group-qualifier ordering ──────────────────────────────────
+
+def order_group_qualifiers(winners: List, runners: List) -> List:
+    """
+    Order group-stage qualifiers for build_bracket, which pairs ADJACENT slots.
+
+    When every group contributed both a champion and a runner-up and the total
+    is a power of two, champions are cross-paired with a DIFFERENT group's
+    runner-up (A1 vs B2, B1 vs C2, …): group-mates cannot rematch in round 1
+    and no champion faces another champion immediately.
+
+    Otherwise champions are listed first, so any byes go to them
+    (build_bracket assigns byes from the front of the list).
+    """
+    total = len(winners) + len(runners)
+    is_pow2 = total >= 2 and (total & (total - 1)) == 0
+    if runners and len(runners) == len(winners) and is_pow2:
+        ordered: List = []
+        for i, w in enumerate(winners):
+            ordered.append(w)
+            ordered.append(runners[(i + 1) % len(runners)])
+        return ordered
+    return list(winners) + list(runners)
+
+
 # ── Convenience ───────────────────────────────────────────────
 
 def expected_match_count(n: int, third_place: bool = False) -> int:

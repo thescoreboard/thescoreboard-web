@@ -35,9 +35,7 @@ function formatDate(iso) {
 }
 
 export default function TournamentCard({ tournament: t, onClick }) {
-  const isLive   = t.status === "live";
   const sm       = STATUS_META[t.status] || STATUS_META.upcoming;
-  const allLive  = t.events?.flatMap(e => e.live_matches || []) || [];
   const sports   = t.sports || [];
 
   // Accent: if single sport use its color, else primary
@@ -48,7 +46,7 @@ export default function TournamentCard({ tournament: t, onClick }) {
       onClick={onClick}
       style={{
         background:    "var(--surface)",
-        border:        `2px solid ${isLive ? "var(--primary)" : "var(--border)"}`,
+        border:        "2px solid var(--border)",
         borderTop:     `3px solid ${accentColor}`,
         borderRadius:  "var(--radius-lg)",
         cursor:        "pointer",
@@ -64,19 +62,11 @@ export default function TournamentCard({ tournament: t, onClick }) {
         e.currentTarget.style.boxShadow    = "0 8px 28px rgba(255,107,53,0.14)";
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.borderColor  = isLive ? "var(--primary)" : "var(--border)";
+        e.currentTarget.style.borderColor  = "var(--border)";
         e.currentTarget.style.transform    = "none";
         e.currentTarget.style.boxShadow    = "none";
       }}
     >
-      {/* Subtle live glow bg */}
-      {isLive && (
-        <div style={{
-          position: "absolute", inset: 0,
-          background: "radial-gradient(circle at 80% 0%, rgba(255,107,53,0.06) 0%, transparent 65%)",
-          pointerEvents: "none",
-        }}/>
-      )}
 
       <div style={{ padding: "16px 18px", flex: 1, display: "flex", flexDirection: "column", gap: 10, position: "relative" }}>
         {/* Top row: sport chips + status */}
@@ -102,7 +92,6 @@ export default function TournamentCard({ tournament: t, onClick }) {
             display: "inline-flex", alignItems: "center", gap: 5,
             flexShrink: 0,
           }}>
-            {isLive && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", animation: "pulse 1.5s infinite", display: "inline-block" }}/>}
             {sm.label}
           </span>
         </div>
@@ -158,7 +147,6 @@ export default function TournamentCard({ tournament: t, onClick }) {
             { label: "Players",  value: t.total_players  || 0 },
             { label: "Matches",  value: t.total_matches  || 0 },
             { label: "Done",     value: t.completed_matches || 0, color: "var(--green)" },
-            t.live_count > 0 && { label: "Live", value: t.live_count, color: "var(--primary)" },
           ].filter(Boolean).map(({ label, value, color }) => (
             <div key={label} style={{ textAlign: "center", flex: 1 }}>
               <div style={{
@@ -174,45 +162,6 @@ export default function TournamentCard({ tournament: t, onClick }) {
         </div>
       </div>
 
-      {/* Live match scoreboard */}
-      {allLive.length > 0 && (
-        <div style={{
-          borderTop: "1px solid rgba(255,107,53,0.2)",
-          background: "var(--primary-dim)",
-          padding: "8px 18px",
-          display: "flex", flexDirection: "column", gap: 4,
-        }}>
-          {allLive.slice(0, 2).map(m => (
-            <div key={m.match_id} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-            }}>
-              <span style={{
-                fontSize: 11, fontWeight: 600, color: "var(--ink)",
-                flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>
-                {m.player_1?.name || "TBD"}
-              </span>
-              <span style={{
-                fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 900,
-                color: "var(--primary)", letterSpacing: 1, minWidth: 48, textAlign: "center",
-              }}>
-                {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
-              </span>
-              <span style={{
-                fontSize: 11, fontWeight: 600, color: "var(--ink)",
-                flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right",
-              }}>
-                {m.player_2?.name || "TBD"}
-              </span>
-            </div>
-          ))}
-          {allLive.length > 2 && (
-            <div style={{ fontSize: 10, color: "var(--primary)", fontWeight: 700, textAlign: "center" }}>
-              +{allLive.length - 2} more in progress
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

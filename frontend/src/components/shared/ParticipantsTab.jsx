@@ -9,7 +9,17 @@
  * Import this in EventWorkspace and render it in the players/teams tab.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth < 640);
+    window.addEventListener("resize", handler, { passive: true });
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return mobile;
+}
 
 // ── Individual Players ────────────────────────────────────────
 const SEED_LEVELS = [
@@ -42,10 +52,8 @@ function matchesAgeGroup(age, group) {
 }
 
 export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup, onRemovePlayer, onUpdateSeed, flash }) {
-  const isGroupKnockout = event.format === "group_knockout";
-
-  const [pForm,     setPForm]     = useState({ name: "", age: "", gender: "Male", seed_level: "", group_id: "" });
-  const [groupName, setGroupName] = useState("");
+  const isMobile = useIsMobile();
+  const [pForm, setPForm] = useState({ name: "", age: "", gender: "Male", seed_level: "" });
 
   const [fName,     setFName]     = useState("");
   const [fGender,   setFGender]   = useState("");
@@ -54,14 +62,8 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
 
   const handleAdd = () => {
     if (!pForm.name.trim()) return flash("Name required.");
-    onAddPlayer({ ...pForm, seed_level: pForm.seed_level || null, group_id: pForm.group_id || null });
-    setPForm({ name: "", age: "", gender: "Male", seed_level: "", group_id: "" });
-  };
-
-  const handleGroup = () => {
-    if (!groupName.trim()) return;
-    onCreateGroup(groupName.trim());
-    setGroupName("");
+    onAddPlayer({ ...pForm, seed_level: pForm.seed_level || null, group_id: null });
+    setPForm({ name: "", age: "", gender: "Male", seed_level: "" });
   };
 
   // All enrolled players (grouped + ungrouped)
@@ -85,129 +87,53 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
       {/* Add player */}
       <div className="card">
         <div className="card-title">Add Player</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input className="input" placeholder="Player name" style={{ flex: 2, minWidth: 140 }}
-            value={pForm.name} onChange={e => setPForm(f => ({ ...f, name: e.target.value }))}
-            onKeyDown={e => e.key === "Enter" && handleAdd()} />
-          <input className="input" placeholder="Age" type="number" style={{ width: 72 }}
-            value={pForm.age} onChange={e => setPForm(f => ({ ...f, age: e.target.value }))} />
-          <select className="input" style={{ width: 100 }} value={pForm.gender}
-            onChange={e => setPForm(f => ({ ...f, gender: e.target.value }))}>
-            <option>Male</option><option>Female</option>
-          </select>
-          <select className="input" style={{ width: 120 }} value={pForm.seed_level}
-            onChange={e => setPForm(f => ({ ...f, seed_level: e.target.value }))}>
-            <option value="">No seed</option>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-            <option value="pro">Pro</option>
-          </select>
-          {isGroupKnockout && (event.groups || []).length > 0 && (
-            <select className="input" style={{ width: 130 }} value={pForm.group_id}
-              onChange={e => setPForm(f => ({ ...f, group_id: e.target.value }))}>
-              <option value="">No group</option>
-              {event.groups.map(g => <option key={g.group_id} value={g.group_id}>{g.name}</option>)}
+        {isMobile ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input className="input" placeholder="Player name" style={{ width: "100%" }}
+              value={pForm.name} onChange={e => setPForm(f => ({ ...f, name: e.target.value }))}
+              onKeyDown={e => e.key === "Enter" && handleAdd()} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <input className="input" placeholder="Age" type="number"
+                value={pForm.age} onChange={e => setPForm(f => ({ ...f, age: e.target.value }))} />
+              <select className="input" value={pForm.gender}
+                onChange={e => setPForm(f => ({ ...f, gender: e.target.value }))}>
+                <option>Male</option><option>Female</option>
+              </select>
+              <select className="input" value={pForm.seed_level}
+                onChange={e => setPForm(f => ({ ...f, seed_level: e.target.value }))}>
+                <option value="">No seed</option>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="advanced">Advanced</option>
+                <option value="pro">Pro</option>
+              </select>
+            </div>
+            <button className="btn btn-primary btn-lg" style={{ width: "100%" }} onClick={handleAdd}>Add Player</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input className="input" placeholder="Player name" style={{ flex: 2, minWidth: 140 }}
+              value={pForm.name} onChange={e => setPForm(f => ({ ...f, name: e.target.value }))}
+              onKeyDown={e => e.key === "Enter" && handleAdd()} />
+            <input className="input" placeholder="Age" type="number" style={{ width: 72 }}
+              value={pForm.age} onChange={e => setPForm(f => ({ ...f, age: e.target.value }))} />
+            <select className="input" style={{ width: 100 }} value={pForm.gender}
+              onChange={e => setPForm(f => ({ ...f, gender: e.target.value }))}>
+              <option>Male</option><option>Female</option>
             </select>
-          )}
-          <button className="btn btn-primary" onClick={handleAdd}>Add</button>
-        </div>
+            <select className="input" style={{ width: 120 }} value={pForm.seed_level}
+              onChange={e => setPForm(f => ({ ...f, seed_level: e.target.value }))}>
+              <option value="">No seed</option>
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+              <option value="pro">Pro</option>
+            </select>
+            <button className="btn btn-primary" onClick={handleAdd}>Add</button>
+          </div>
+        )}
       </div>
 
-      {/* Groups — only shown for group_knockout */}
-      {isGroupKnockout && (
-        <div className="card">
-          <div className="card-title">Groups</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            <input className="input" placeholder="Group name (e.g. Group A)" style={{ flex: 1 }}
-              value={groupName} onChange={e => setGroupName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleGroup()} />
-            <button className="btn btn-primary" onClick={handleGroup}>Create Group</button>
-          </div>
-
-          {(event.groups || []).length === 0 && (
-            <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 0" }}>
-              Create groups first, then assign players to them.
-            </div>
-          )}
-
-          {(event.groups || []).map(g => (
-            <div key={g.group_id} className="group-box" style={{ marginBottom: 10 }}>
-              <div className="group-title">
-                {g.name}
-                <span style={{ fontWeight: 400, fontSize: 11, color: "var(--muted)", textTransform: "none", marginLeft: 6 }}>
-                  ({(g.players || []).length} players)
-                </span>
-              </div>
-              {(g.players || []).length === 0 ? (
-                <span style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>Empty</span>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                  {(g.players || []).map((p, idx) => (
-                    <div key={p.player_id} style={{
-                      display: "grid", gridTemplateColumns: "1fr 48px 72px 120px auto",
-                      gap: 8, padding: "7px 4px", alignItems: "center",
-                      borderBottom: idx < (g.players || []).length - 1 ? "1px solid rgba(0,0,0,0.06)" : "none",
-                    }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
-                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{p.age || "—"}</span>
-                      <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "capitalize" }}>{p.gender || "—"}</span>
-                      <select
-                        value={p.seed_level || ""}
-                        onChange={e => onUpdateSeed && onUpdateSeed(p.player_id, e.target.value)}
-                        style={{ padding: "3px 6px", borderRadius: 5, fontSize: 11, fontWeight: 600, border: "1px solid var(--border)", background: "var(--surface)", color: p.seed_level ? SEED_COLOR[p.seed_level] || "var(--ink)" : "var(--muted)" }}>
-                        {SEED_LEVELS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                      </select>
-                      <button onClick={() => onAssignGroup(p.player_id, null)}
-                        style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: "0 4px", fontSize: 16, lineHeight: 1, opacity: 0.6 }}>×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-
-          {ungrouped.length > 0 && (
-            <div className="group-box" style={{ marginTop: 8, borderColor: "rgba(255,204,0,0.25)", background: "var(--gold-dim)" }}>
-              <div className="group-title" style={{ color: "var(--gold)" }}>
-                Unassigned Players ({ungrouped.length})
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                {ungrouped.map((p, idx) => (
-                  <div key={p.player_id} style={{
-                    display: "grid", gridTemplateColumns: "1fr 48px 72px 120px 1fr",
-                    gap: 8, padding: "8px 4px", alignItems: "center",
-                    borderBottom: idx < ungrouped.length - 1 ? "1px solid rgba(255,204,0,0.15)" : "none",
-                  }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{p.name}</span>
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{p.age || "—"}</span>
-                    <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "capitalize" }}>{p.gender || "—"}</span>
-                    <select
-                      value={p.seed_level || ""}
-                      onChange={e => onUpdateSeed && onUpdateSeed(p.player_id, e.target.value)}
-                      style={{ padding: "3px 6px", borderRadius: 5, fontSize: 11, fontWeight: 600, border: "1px solid var(--border)", background: "var(--surface)", color: p.seed_level ? SEED_COLOR[p.seed_level] || "var(--ink)" : "var(--muted)" }}>
-                      {SEED_LEVELS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                    {(event.groups || []).length > 0 ? (
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                        {event.groups.map(g => (
-                          <button key={g.group_id} className="btn btn-sm btn-outline"
-                            style={{ fontSize: 11, padding: "3px 10px" }}
-                            onClick={() => onAssignGroup(p.player_id, g.group_id)}>
-                            → {g.name}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>Create a group to assign</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Player list — detailed rows for all formats */}
       <div className="card">
@@ -230,33 +156,30 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
         </div>
 
         {/* ── Filter bar ── */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-          {/* Name search */}
-          <div style={{ position: "relative", flex: 2, minWidth: 140 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "2fr 1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+          {/* Name search — spans full width on mobile */}
+          <div style={{ position: "relative", gridColumn: isMobile ? "1 / -1" : undefined }}>
             <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--muted)", pointerEvents: "none" }}>🔍</span>
             <input
               className="input"
               placeholder="Search name…"
               value={fName}
               onChange={e => setFName(e.target.value)}
-              style={{ paddingLeft: 28, width: "100%" }}
+              style={{ paddingLeft: 28, width: "100%", boxSizing: "border-box" }}
             />
           </div>
 
-          {/* Gender */}
-          <select className="input" style={{ width: 110 }} value={fGender} onChange={e => setFGender(e.target.value)}>
+          <select className="input" value={fGender} onChange={e => setFGender(e.target.value)}>
             <option value="">All genders</option>
             <option value="Male">Male</option>
             <option value="Female">Female</option>
           </select>
 
-          {/* Age group */}
-          <select className="input" style={{ width: 120 }} value={fAge} onChange={e => setFAge(e.target.value)}>
+          <select className="input" value={fAge} onChange={e => setFAge(e.target.value)}>
             {AGE_GROUPS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
           </select>
 
-          {/* Skill level */}
-          <select className="input" style={{ width: 130 }} value={fSeed} onChange={e => setFSeed(e.target.value)}>
+          <select className="input" value={fSeed} onChange={e => setFSeed(e.target.value)}>
             <option value="">All levels</option>
             <option value="beginner">Beginner</option>
             <option value="intermediate">Intermediate</option>
@@ -271,7 +194,51 @@ export function IndividualTab({ event, onAddPlayer, onCreateGroup, onAssignGroup
           <div style={{ fontSize: 13, color: "var(--muted)", padding: "16px 0", textAlign: "center" }}>
             No players match the current filters.
           </div>
+        ) : isMobile ? (
+          /* ── Mobile: card per player ── */
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {filtered.map((p, idx) => (
+              <div key={p.player_id} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 4px",
+                borderBottom: idx < filtered.length - 1 ? "1px solid var(--border)" : "none",
+              }}>
+                {/* Name + meta */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {p.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>
+                    {[p.age ? `Age ${p.age}` : null, p.gender].filter(Boolean).join(" · ") || "—"}
+                  </div>
+                </div>
+
+                {/* Seed select */}
+                <select
+                  value={p.seed_level || ""}
+                  onChange={e => onUpdateSeed && onUpdateSeed(p.player_id, e.target.value)}
+                  style={{
+                    padding: "4px 6px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    border: "1px solid var(--border)", background: "var(--surface)",
+                    color: p.seed_level ? SEED_COLOR[p.seed_level] || "var(--ink)" : "var(--muted)",
+                    cursor: onUpdateSeed ? "pointer" : "default",
+                    flexShrink: 0, maxWidth: 100,
+                  }}
+                >
+                  {SEED_LEVELS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+
+                {/* Remove */}
+                {onRemovePlayer && (
+                  <button onClick={() => onRemovePlayer(p.player_id)}
+                    style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: "0 2px", fontSize: 18, lineHeight: 1, opacity: 0.5, flexShrink: 0 }}
+                    title="Remove player">×</button>
+                )}
+              </div>
+            ))}
+          </div>
         ) : (
+          /* ── Desktop: table grid ── */
           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
             {/* Column headers */}
             <div style={{

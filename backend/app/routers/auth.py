@@ -20,6 +20,7 @@ from app.schemas.auth import (
     TokenOut, UserOut, PlayerProfileIn, PlayerProfileOut,
 )
 from app.utils.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.utils.ratelimit import login_limiter, register_limiter
 from app.utils.roles import compute_roles
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ router = APIRouter()
 
 # ── Email / password ──────────────────────────────────────────────────────────
 
-@router.post("/register", response_model=TokenOut)
+@router.post("/register", response_model=TokenOut, dependencies=[Depends(register_limiter)])
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
@@ -48,7 +49,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     return TokenOut(access_token=token)
 
 
-@router.post("/login", response_model=TokenOut)
+@router.post("/login", response_model=TokenOut, dependencies=[Depends(login_limiter)])
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email, User.is_active != False).first()
     if not user or not user.password_hash:
@@ -62,7 +63,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 # ── Google SSO ────────────────────────────────────────────────────────────────
 
-@router.post("/google", response_model=TokenOut)
+@router.post("/google", response_model=TokenOut, dependencies=[Depends(login_limiter)])
 def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google login is not configured on this server")
@@ -188,6 +189,46 @@ def _stage_reached_label(stage: str, won: bool) -> str:
     return _STAGE_LABELS.get(stage, stage.replace("_", " ").title())
 
 
+# ── Account deletion ──────────────────────────────────────────────────────────
+
+@router.delete("/me", status_code=204)
+def delete_account(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Permanently remove a user's personal data (GDPR / Google Play requirement).
+
+    Strategy: anonymise the User + Player rows so that existing tournament and
+    match history records (which reference player_id / user_id via FK) remain
+    intact.  The account becomes unreachable — email is replaced with a unique
+    sentinel, password hash and Google ID are cleared, and is_active is set to
+    False so no new token can be issued for the account.
+    """
+    import uuid
+    anon_suffix = uuid.uuid4().hex[:10]
+
+    # Anonymise PII on the Player profile (keep row for FK integrity)
+    player = db.query(Player).filter(Player.user_id == user.user_id).first()
+    if player:
+        player.name     = "Deleted User"
+        player.phone    = None
+        player.location = None
+        player.email    = f"deleted_{user.user_id}_{anon_suffix}@deleted.invalid"
+
+    # Remove org membership so they no longer have organiser access
+    db.query(OrgMember).filter(OrgMember.user_id == user.user_id).delete(synchronize_session=False)
+
+    # Anonymise the User row — wipe all PII, block future logins
+    user.email         = f"deleted_{user.user_id}_{anon_suffix}@deleted.invalid"
+    user.name          = "Deleted User"
+    user.phone         = None
+    user.password_hash = None
+    user.google_id     = None
+    user.avatar_url    = None
+    user.is_active     = False
+
+    db.commit()
+    # Return 204 No Content — client must clear its local token immediately
+
+
 def _best_finish_for_player(db: Session, player_ids: list[int], tournament_id: int) -> str | None:
     """Return the best finish label for these player_ids within a tournament."""
     rows = (
@@ -206,6 +247,38 @@ def _best_finish_for_player(db: Session, player_ids: list[int], tournament_id: i
     best_row = max(rows, key=lambda r: _STAGE_ORDER.get(r[0].stage or "group", 0))
     match, mp = best_row
     return _stage_reached_label(match.stage or "group", bool(mp.is_winner))
+
+
+def _bulk_best_finish(db: Session, player_ids: list[int], tournament_ids: list[int]) -> dict[int, str | None]:
+    """Return best-finish label per tournament_id — single DB query for all tournaments."""
+    if not player_ids or not tournament_ids:
+        return {}
+    rows = (
+        db.query(Match, MatchParticipant, Event.tournament_id)
+        .join(MatchParticipant, MatchParticipant.match_id == Match.match_id)
+        .join(Event, Event.event_id == Match.event_id)
+        .filter(
+            Event.tournament_id.in_(tournament_ids),
+            MatchParticipant.player_id.in_(player_ids),
+            Match.status == "done",
+        )
+        .all()
+    )
+    # Group rows by tournament_id, then pick the best stage per tournament
+    from collections import defaultdict
+    by_tournament: dict[int, list] = defaultdict(list)
+    for match, mp, tid in rows:
+        by_tournament[tid].append((match, mp))
+
+    result: dict[int, str | None] = {}
+    for tid in tournament_ids:
+        t_rows = by_tournament.get(tid)
+        if not t_rows:
+            result[tid] = None
+            continue
+        best_match, best_mp = max(t_rows, key=lambda r: _STAGE_ORDER.get(r[0].stage or "group", 0))
+        result[tid] = _stage_reached_label(best_match.stage or "group", bool(best_mp.is_winner))
+    return result
 
 
 @router.get("/my-tournaments")
@@ -241,10 +314,8 @@ def get_my_tournaments(
     )
     t_map: dict[int, Tournament] = {t.tournament_id: t for t in tournaments}
 
-    # Best finish per tournament — one query per tournament (not per sport×tournament)
-    finish_map: dict[int, str | None] = {
-        tid: _best_finish_for_player(db, player_ids, tid) for tid in tournament_ids if tid in t_map
-    }
+    # Best finish per tournament — single bulk query for all tournaments
+    finish_map = _bulk_best_finish(db, player_ids, [tid for tid in tournament_ids if tid in t_map])
 
     # Deduplicate by tournament; keep first ep per tournament
     seen: dict[int, dict] = {}
@@ -344,14 +415,14 @@ def get_my_stats(
         m = data["matches"]
         data["win_pct"] = round(data["wins"] / m * 100) if m else 0
 
-    # Best finish: call _best_finish_for_player ONCE per tournament (not per sport×tournament)
-    # then distribute the result to every sport that was played in that tournament.
+    # Best finish: single bulk query for all tournaments, then distribute per sport
     FINISH_RANK = {
         "Champion": 6, "Runner-up": 5, "3rd Place": 4, "4th Place": 3,
         "Semi-Final": 2, "Quarter-Final": 1, "Group Stage": 0,
     }
+    finish_bulk = _bulk_best_finish(db, player_ids, list(tournament_ids))
     for tid in tournament_ids:
-        label = _best_finish_for_player(db, player_ids, tid)
+        label = finish_bulk.get(tid)
         if not label:
             continue
         rank = FINISH_RANK.get(label, -1)

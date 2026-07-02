@@ -17,7 +17,7 @@ from app.schemas.tournament import TournamentCreate, TournamentUpdate, Tournamen
 from app.utils.auth import get_current_user, require_pro
 from app.utils.slug import generate_unique_slug
 from app.sports.registry import get_sport_engine
-from app.sports.bracket import build_bracket, assign_players_to_groups
+from app.sports.bracket import build_bracket, assign_players_to_groups, order_group_qualifiers
 
 router = APIRouter()
 
@@ -222,25 +222,59 @@ def get_workspace(
         Event.tournament_id == tournament_id, Event.is_active == True
     ).all()
 
-    for event in events:
-        is_team_event = event.participant_type in ("team", "doubles_pair")
+    if events:
+        event_ids = [e.event_id for e in events]
 
-        # Groups
-        groups = db.query(Group).filter(Group.event_id == event.event_id).order_by(Group.name).all()
+        # ── Bulk queries (3 queries total regardless of event count) ──
+        all_groups = (
+            db.query(Group)
+            .filter(Group.event_id.in_(event_ids))
+            .order_by(Group.event_id, Group.name)
+            .all()
+        )
+        groups_by_event: dict = {}
+        for g in all_groups:
+            groups_by_event.setdefault(g.event_id, []).append(g)
 
-        # Single bulk query for ALL participants in this event — avoids N queries for N groups.
         all_eps = (
             db.query(EventParticipant)
-            .filter(EventParticipant.event_id == event.event_id)
+            .filter(EventParticipant.event_id.in_(event_ids))
             .options(
                 joinedload(EventParticipant.player),
                 joinedload(EventParticipant.team),
             )
             .all()
         )
-        eps_by_group: dict = {}
+        eps_by_event: dict = {}
         for ep in all_eps:
-            eps_by_group.setdefault(ep.group_id, []).append(ep)
+            eps_by_event.setdefault(ep.event_id, {}).setdefault(ep.group_id, []).append(ep)
+
+        all_matches = (
+            db.query(Match)
+            .filter(Match.event_id.in_(event_ids))
+            .options(
+                joinedload(Match.participants).joinedload(MatchParticipant.player),
+                joinedload(Match.participants).joinedload(MatchParticipant.team),
+                joinedload(Match.sets),
+            )
+            .order_by(Match.stage, Match.round, Match.match_id)
+            .all()
+        )
+        matches_by_event: dict = {}
+        for m in all_matches:
+            matches_by_event.setdefault(m.event_id, []).append(m)
+    else:
+        groups_by_event = {}
+        eps_by_event    = {}
+        matches_by_event = {}
+
+    for event in events:
+        is_team_event = event.participant_type in ("team", "doubles_pair")
+        eid           = event.event_id
+
+        groups        = groups_by_event.get(eid, [])
+        eps_by_group  = eps_by_event.get(eid, {})
+        matches       = matches_by_event.get(eid, [])
 
         groups_data = []
         for g in groups:
@@ -262,19 +296,7 @@ def get_workspace(
         # Ungrouped participants — already loaded above, just filter by group_id=None
         ungrouped = eps_by_group.get(None, [])
 
-        # Matches
-        matches = (
-            db.query(Match).filter(Match.event_id == event.event_id)
-            .options(
-                joinedload(Match.participants).joinedload(MatchParticipant.player),
-                joinedload(Match.participants).joinedload(MatchParticipant.team),
-                joinedload(Match.sets),
-            )
-            .order_by(Match.stage, Match.round, Match.match_id)
-            .all()
-        )
-
-        # Derive count from already-loaded data — avoids an extra COUNT(*) query per event
+        # Derive count from already-loaded data — no extra COUNT(*) per event
         grouped_count = sum(len(g["participants"]) for g in groups_data)
         participant_count = grouped_count + len(ungrouped)
         match_count  = len(matches)
@@ -512,6 +534,20 @@ def transition_status(
     if target_status not in TOURNAMENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status: {target_status}")
 
+    _ALLOWED_TRANSITIONS = {
+        "draft":        {"registration", "upcoming", "live"},
+        "registration": {"upcoming", "live", "draft"},
+        "upcoming":     {"live", "registration"},
+        "live":         {"done"},
+        "done":         set(),
+    }
+    allowed = _ALLOWED_TRANSITIONS.get(t.status, set())
+    if target_status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot move from '{t.status}' to '{target_status}'",
+        )
+
     t.status = target_status
 
     # Auto-publish when going live
@@ -652,36 +688,22 @@ def generate_fixtures(
     table_counter = 0
 
     # ════════════════════════════════════════════════════════════
-    # FORMAT: group_knockout — round-robin within each group
+    # FORMAT: group_knockout — must go through the dedicated endpoints
     # ════════════════════════════════════════════════════════════
     if event.format == "group_knockout":
-        groups = db.query(Group).filter(Group.event_id == event_id).all()
-        if not groups:
-            raise HTTPException(
-                status_code=400,
-                detail="No groups found. Create groups and assign participants first."
-            )
-
-        for group in groups:
-            eps = db.query(EventParticipant).filter(
-                EventParticipant.event_id == event_id,
-                EventParticipant.group_id == group.group_id,
-            ).all()
-
-            if len(eps) < 2:
-                continue
-
-            ids = [ep.team_id if is_team_event else ep.player_id for ep in eps]
-            existing = _existing_pairs(group.group_id)
-
-            for i in range(len(ids)):
-                for j in range(i + 1, len(ids)):
-                    pair = tuple(sorted([ids[i], ids[j]]))
-                    if pair in existing:
-                        continue
-                    table_counter += 1
-                    _create_match(ids[i], ids[j], group.group_id, "group", 1, ((table_counter - 1) % 2) + 1)
-                    matches_created += 1
+        # This endpoint used to create round-robin matches (stage="group")
+        # inside each group. The knockout phase qualifies from each group's
+        # completed FINAL match, which a round-robin never produces — so any
+        # event set up through this path could never reach its knockout stage.
+        # Group fixtures must be generated via generate-groups (auto) or
+        # generate-group-matches (manual assignment) instead.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Group-stage fixtures for this format are created via "
+                "'Generate Groups' (or manual group setup), not this endpoint."
+            ),
+        )
 
     # ════════════════════════════════════════════════════════════
     # FORMAT: round_robin — everyone plays everyone, no groups
@@ -710,8 +732,15 @@ def generate_fixtures(
         if len(ids) < 2:
             raise HTTPException(status_code=400, detail="Need at least 2 participants to generate fixtures.")
 
-        # Delete any existing knockout matches before regenerating
+        # Delete any existing knockout matches before regenerating,
+        # but refuse if any match is already in progress or done.
         existing_matches = db.query(Match).filter(Match.event_id == event_id).all()
+        active = [m for m in existing_matches if m.status in ("live", "done")]
+        if active:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot regenerate fixtures: some matches are already live or done.",
+            )
         for m in existing_matches:
             db.delete(m)
         db.flush()
@@ -1173,8 +1202,10 @@ def generate_knockout_from_groups(
         raise HTTPException(status_code=404, detail="Event not found")
     if event.format != "group_knockout":
         raise HTTPException(status_code=400, detail="Event format must be group_knockout")
-    if qualifiers_per_group < 1:
-        raise HTTPException(status_code=400, detail="qualifiers_per_group must be at least 1")
+    if qualifiers_per_group not in (1, 2):
+        # Only the group final's winner (and optionally its loser) can qualify —
+        # values above 2 were previously accepted and silently produced nothing.
+        raise HTTPException(status_code=400, detail="qualifiers_per_group must be 1 or 2")
 
     t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
     _check_org_access(t.org_id, user, db)
@@ -1201,11 +1232,13 @@ def generate_knockout_from_groups(
         )
 
     # Qualify from each group's completed knockout final.
-    # Slot 0 = group champion  (final winner)
-    # Slot 1 = group runner-up (final loser) — only if qualifiers_per_group >= 2
-    # Seeding interleave: A1,B1,C1,D1,A2,B2,C2,D2 so champions are on opposite halves.
-    buckets: list = [[] for _ in range(qualifiers_per_group)]
-    groups_not_ready = 0
+    #   champion  = final winner
+    #   runner-up = final loser (only if qualifiers_per_group == 2)
+    # Every group must be finished — silently dropping unfinished groups
+    # (the old behaviour) built championship brackets with missing players.
+    winners: list = []
+    runners: list = []
+    not_ready: list = []
 
     for group in groups:
         group_final = (
@@ -1220,7 +1253,7 @@ def generate_knockout_from_groups(
             .first()
         )
         if not group_final:
-            groups_not_ready += 1
+            not_ready.append(group.name)
             continue
 
         winner_mp = next((p for p in group_final.participants if p.is_winner), None)
@@ -1229,24 +1262,30 @@ def generate_knockout_from_groups(
         if winner_mp:
             pid = winner_mp.team_id or winner_mp.player_id
             if pid:
-                buckets[0].append(pid)
+                winners.append(pid)
 
         if qualifiers_per_group >= 2 and loser_mp:
             pid = loser_mp.team_id or loser_mp.player_id
             if pid:
-                buckets[1].append(pid)
+                runners.append(pid)
 
-    qualified_ids: list = []
-    for bucket in buckets:
-        qualified_ids.extend(bucket)
+    if not_ready:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"These groups don't have a completed final yet: {', '.join(not_ready)}. "
+                "Finish every group's bracket before generating the championship."
+            ),
+        )
+
+    # Cross-pair champions with other groups' runners-up (A1 vs B2, B1 vs C2, …)
+    # so no champion meets another champion — or a group-mate — in round 1.
+    qualified_ids: list = order_group_qualifiers(winners, runners)
 
     if len(qualified_ids) < 2:
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"{groups_not_ready} group(s) have no completed final yet. "
-                "Finish each group's knockout bracket before generating the championship bracket."
-            ),
+            detail="Need at least 2 qualified players to build the championship bracket.",
         )
 
     # Delete any existing knockout matches (scheduled only — started ones were blocked above)
@@ -1296,5 +1335,6 @@ def generate_knockout_from_groups(
         "ok": True,
         "qualifiers": len(qualified_ids),
         "matches_created": matches_created,
-        "groups_not_ready": groups_not_ready,
+        # kept for mobile-client compat — generation now refuses unless 0
+        "groups_not_ready": 0,
     }
