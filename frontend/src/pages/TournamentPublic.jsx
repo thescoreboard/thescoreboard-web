@@ -11,7 +11,6 @@ import PageLoader from "../components/shared/PageLoader";
 import { ShareButton } from "../components/shared/ShareButton";
 import { useShare } from "../hooks/useShare";
 
-const POLL_MS  = 8000;
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 // ── Responsive hook ───────────────────────────────────────────
@@ -1549,9 +1548,8 @@ function TickerBar({ allMatches }) {
 }
 
 // ── Hero Band (broadcast-style dark hero) ─────────────────────
-function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatches, sportKey, onRegister, events, liveMatches, slug }) {
+function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKey, onRegister, events, slug }) {
   const status     = tournament.status || "draft";
-  const isLiveNow  = liveCount > 0;
   const sportEmoji = sa(sportKey);
   const sportLabel = sl(sportKey);
 
@@ -1576,23 +1574,9 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
   // Stats strip items
   const statsItems = [
     { label:"Matches", val: totalMatches, color:"var(--ink)" },
-    { label:"Live",    val: liveCount,    color:"var(--primary)", hide: liveCount === 0 },
     { label:"Done",    val: doneMatches,  color:"#16a34a" },
     { label: teamCount > 0 ? "Teams" : "Players", val: teamCount > 0 ? teamCount : totalPlayers, color:"var(--ink)" },
-  ].filter(s => !s.hide);
-
-  // Live match carousel (auto-rotate every 5s when >1 live match)
-  const [liveIdx, setLiveIdx] = useState(0);
-  useEffect(() => {
-    if (!liveMatches?.length || liveMatches.length < 2) return;
-    const id = setInterval(() => setLiveIdx(i => (i + 1) % liveMatches.length), 5000);
-    return () => clearInterval(id);
-  }, [liveMatches?.length]);
-  // Reset index if matches list shrinks
-  const safeIdx  = Math.min(liveIdx, (liveMatches?.length || 1) - 1);
-  const liveMatch = liveMatches?.[safeIdx] || null;
-
-  // (per-slide round/over info is computed inside the carousel map)
+  ];
 
   // Team abbreviation helper
   const teamAbbr = (name) => {
@@ -1603,16 +1587,11 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
   };
 
   // Right panel: what to show when no live match
-  // Show the dark right panel only when there are actual live matches.
-  const showRightPanel = (liveMatches?.length ?? 0) > 0;
-
   const w = useW();
   const isMobile = w < 768;
 
   return (
     <div style={{
-      display:"grid",
-      gridTemplateColumns: isMobile ? "1fr" : showRightPanel ? "55% 45%" : "1fr",
       minHeight: isMobile ? "auto" : 320,
       borderBottom:"3px solid var(--primary)"
     }}>
@@ -1631,15 +1610,9 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
         <div style={{ position:"relative", zIndex:2 }}>
           {/* Badges row */}
           <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-            {isLiveNow ? (
-              <span style={{ display:"inline-flex", alignItems:"center", gap:7, background:"var(--primary)", color:"#fff", borderRadius:6, padding:"6px 14px", fontFamily:"var(--font-display)", fontSize:7.5, fontWeight:800, letterSpacing:2 }}>
-                <span className="live-dot" style={{ background:"#fff", color:"#fff", width:7, height:7 }}/>LIVE
-              </span>
-            ) : (
-              <span style={{ display:"inline-flex", alignItems:"center", background:"var(--elevated)", border:"1px solid var(--border)", color:"var(--muted)", borderRadius:6, padding:"6px 14px", fontFamily:"var(--font-display)", fontSize:7.5, fontWeight:800, letterSpacing:2 }}>
-                {STATUS_BADGE[status] || "UPCOMING"}
-              </span>
-            )}
+            <span style={{ display:"inline-flex", alignItems:"center", background:"var(--elevated)", border:"1px solid var(--border)", color:"var(--muted)", borderRadius:6, padding:"6px 14px", fontFamily:"var(--font-display)", fontSize:7.5, fontWeight:800, letterSpacing:2 }}>
+              {STATUS_BADGE[status] || "UPCOMING"}
+            </span>
             {sportLabel && (
               <span style={{ display:"inline-flex", alignItems:"center", gap:6, border:"1px solid var(--border)", background:"var(--surface)", borderRadius:6, padding:"6px 14px", fontFamily:"var(--font-display)", fontSize:7.5, fontWeight:800, letterSpacing:2, color: tournament.poster_url ? "rgba(255,255,255,.75)" : "var(--muted)" }}>
                 {sportEmoji} {sportLabel.toUpperCase()}
@@ -1719,8 +1692,7 @@ function HeroBand({ tournament, liveCount, totalPlayers, doneMatches, totalMatch
         </div>
       </div>
 
-      {/* ── RIGHT PANEL — live matches only ── */}
-      {showRightPanel && !isMobile && <div style={{ background:"#0d0d0d", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 32px", position:"relative", overflow:"hidden" }}>
+      {false && <div style={{ display:"none" }}>
 
         {/* Subtle sport emoji watermark */}
         {sportEmoji && (
@@ -2085,17 +2057,6 @@ function TournamentHero({ tournament, liveCount, totalPlayers, doneMatches, tota
           <p style={{ fontSize:13, color:"var(--muted)", lineHeight:1.6, margin:"0 0 16px", maxWidth:560 }}>
             {tournament.description}
           </p>
-        )}
-
-        {/* Stats row — only Live chip kept; Matches chip removed */}
-        {liveCount > 0 && (
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:16 }}>
-            <div style={{ background:"rgba(255,107,53,.12)", border:"1px solid rgba(255,107,53,.3)", borderRadius:20, padding:"5px 14px", display:"flex", alignItems:"center", gap:6 }}>
-              <span className="live-dot" style={{ width:6, height:6, background:"var(--primary)" }}/>
-              <span style={{ fontFamily:"var(--font-display)", fontSize:15, fontWeight:900, color:"var(--primary)", lineHeight:1 }}>{liveCount}</span>
-              <span style={{ fontSize:11, color:"var(--primary)", fontWeight:600 }}>Live</span>
-            </div>
-          </div>
         )}
 
         {/* Register CTA — full-width prominent button, separate from stats */}
@@ -2986,13 +2947,6 @@ export default function TournamentPublic() {
     });
   }, [data]);
 
-  useEffect(() => {
-    if (!data) return;
-    const allMatches = data.events?.flatMap(ev => ev.all_matches || []) || [];
-    if (!allMatches.some(m => m.status === "live")) return;
-    const id = setInterval(fetchData, POLL_MS);
-    return () => clearInterval(id);
-  }, [data, fetchData]);
 
   const switchTab = (id) => {
     setActiveId(id);
@@ -3018,7 +2972,6 @@ export default function TournamentPublic() {
   const status = t.status || "draft";
 
   const allMatches  = events.flatMap(ev => ev.all_matches || []);
-  const liveMatches = allMatches.filter(m => m.status === "live");
   const doneCt      = allMatches.filter(m => m.status === "done").length;
   const totalPlayers = events.reduce((s, ev) => s + (ev.player_count ?? 0), 0);
 
@@ -3048,7 +3001,7 @@ export default function TournamentPublic() {
     <div className="app">
       <TickerBar allMatches={[]} />
       <SectionNav sections={[{ id:"fixtures", label:"Fixtures" }]} activeId="fixtures" onNav={() => {}} darkMode={darkMode} onToggleDark={toggleDark} slug={slug} tournament={t} />
-      <HeroBand tournament={t} liveCount={0} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} onRegister={null} events={events} liveMatches={[]} slug={slug} />
+      <HeroBand tournament={t} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} onRegister={null} events={events} slug={slug} />
       <DraftView tournament={t} />
     </div>
   );
@@ -3088,22 +3041,17 @@ export default function TournamentPublic() {
         tournament={t}
       />
 
-      {/* ── Dark hero band ── */}
+      {/* ── Hero band ── */}
       <HeroBand
         tournament={t}
-        liveCount={liveMatches.length}
         totalPlayers={totalPlayers}
         doneMatches={doneCt}
         totalMatches={allMatches.length}
         sportKey={primarySportKey}
         onRegister={() => navigate(`/t/${slug}/register`)}
         events={events}
-        liveMatches={liveMatches}
         slug={slug}
       />
-
-      {/* ── Orange live strip (only when matches are live) ── */}
-      {liveMatches.length > 0 && <LiveStrip liveMatches={liveMatches} />}
 
       {/* ── Tab content ── */}
       <div style={{ minHeight:"50vh" }}>
@@ -3130,7 +3078,6 @@ export default function TournamentPublic() {
           ) : <div/>}
           <span style={{ fontFamily:"var(--font-display)", fontSize:8, color:"var(--muted)", letterSpacing:2 }}>
             POWERED BY <span style={{ color:"var(--primary)" }}>THE</span>SCORE<span style={{ color:"var(--primary)" }}>BOARD</span>
-            {liveMatches.length > 0 && <span style={{ marginLeft:12, color:"var(--primary)" }}>· AUTO-REFRESHING</span>}
           </span>
         </div>
       </footer>

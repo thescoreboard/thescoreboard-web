@@ -370,7 +370,15 @@ export default function Dashboard() {
               <TournamentCard key={t.tournament_id} tournament={t}
                 showKebab={showKebab===t.tournament_id}
                 onKebabToggle={e => { e.stopPropagation(); setShowKebab(showKebab===t.tournament_id?null:t.tournament_id); }}
-                onManage={() => navigate(`/organiser/tournament/${t.tournament_id}`)}
+                onManage={() => {
+                  // Single-sport with one configured event → go straight to workspace
+                  const events = t.events || [];
+                  if (!t.is_multi_sport && events.length === 1 && events[0].is_configured !== false) {
+                    navigate(`/organiser/tournament/${t.tournament_id}/event/${events[0].event_id}`);
+                  } else {
+                    navigate(`/organiser/tournament/${t.tournament_id}`);
+                  }
+                }}
                 onDelete={() => { setShowKebab(null); setShowDeleteModal(t); }}
                 onCopy={() => { navigator.clipboard.writeText(`${window.location.origin}/t/${t.slug}`); flash("Link copied!"); setShowKebab(null); }}
               />

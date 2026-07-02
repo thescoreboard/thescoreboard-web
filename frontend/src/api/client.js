@@ -64,7 +64,7 @@ export function isLoggedIn() {
   if (!token) return false;
   try {
     const p = JSON.parse(atob(token.split(".")[1]));
-    if (p.exp && Date.now() / 1000 > p.exp) { clearToken(); return false; }
+    if (!p.exp || Date.now() / 1000 > p.exp) { clearToken(); return false; }
     return true;
   } catch { clearToken(); return false; }
 }

@@ -735,11 +735,11 @@ export default function CreateTournament() {
                   )}
                 </div>
 
-                <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-                  <button className="btn btn-outline" style={{ flexShrink: 0 }} onClick={back}>← Back</button>
-                  <button className="btn btn-gradient btn-lg" style={{ fontSize: 13, flex: 1 }} onClick={handleCreate} disabled={loading}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
+                  <button className="btn btn-gradient btn-lg" style={{ fontSize: 13, width: "100%" }} onClick={handleCreate} disabled={loading}>
                     {loading ? "Creating…" : "Create Tournament →"}
                   </button>
+                  <button className="btn btn-outline" style={{ width: "100%" }} onClick={back}>← Back</button>
                 </div>
               </div>
             )}

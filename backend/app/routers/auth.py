@@ -248,6 +248,38 @@ def _best_finish_for_player(db: Session, player_ids: list[int], tournament_id: i
     return _stage_reached_label(match.stage or "group", bool(mp.is_winner))
 
 
+def _bulk_best_finish(db: Session, player_ids: list[int], tournament_ids: list[int]) -> dict[int, str | None]:
+    """Return best-finish label per tournament_id — single DB query for all tournaments."""
+    if not player_ids or not tournament_ids:
+        return {}
+    rows = (
+        db.query(Match, MatchParticipant, Event.tournament_id)
+        .join(MatchParticipant, MatchParticipant.match_id == Match.match_id)
+        .join(Event, Event.event_id == Match.event_id)
+        .filter(
+            Event.tournament_id.in_(tournament_ids),
+            MatchParticipant.player_id.in_(player_ids),
+            Match.status == "done",
+        )
+        .all()
+    )
+    # Group rows by tournament_id, then pick the best stage per tournament
+    from collections import defaultdict
+    by_tournament: dict[int, list] = defaultdict(list)
+    for match, mp, tid in rows:
+        by_tournament[tid].append((match, mp))
+
+    result: dict[int, str | None] = {}
+    for tid in tournament_ids:
+        t_rows = by_tournament.get(tid)
+        if not t_rows:
+            result[tid] = None
+            continue
+        best_match, best_mp = max(t_rows, key=lambda r: _STAGE_ORDER.get(r[0].stage or "group", 0))
+        result[tid] = _stage_reached_label(best_match.stage or "group", bool(best_mp.is_winner))
+    return result
+
+
 @router.get("/my-tournaments")
 def get_my_tournaments(
     user: User = Depends(get_current_user),
@@ -281,10 +313,8 @@ def get_my_tournaments(
     )
     t_map: dict[int, Tournament] = {t.tournament_id: t for t in tournaments}
 
-    # Best finish per tournament — one query per tournament (not per sport×tournament)
-    finish_map: dict[int, str | None] = {
-        tid: _best_finish_for_player(db, player_ids, tid) for tid in tournament_ids if tid in t_map
-    }
+    # Best finish per tournament — single bulk query for all tournaments
+    finish_map = _bulk_best_finish(db, player_ids, [tid for tid in tournament_ids if tid in t_map])
 
     # Deduplicate by tournament; keep first ep per tournament
     seen: dict[int, dict] = {}
@@ -384,14 +414,14 @@ def get_my_stats(
         m = data["matches"]
         data["win_pct"] = round(data["wins"] / m * 100) if m else 0
 
-    # Best finish: call _best_finish_for_player ONCE per tournament (not per sport×tournament)
-    # then distribute the result to every sport that was played in that tournament.
+    # Best finish: single bulk query for all tournaments, then distribute per sport
     FINISH_RANK = {
         "Champion": 6, "Runner-up": 5, "3rd Place": 4, "4th Place": 3,
         "Semi-Final": 2, "Quarter-Final": 1, "Group Stage": 0,
     }
+    finish_bulk = _bulk_best_finish(db, player_ids, list(tournament_ids))
     for tid in tournament_ids:
-        label = _best_finish_for_player(db, player_ids, tid)
+        label = finish_bulk.get(tid)
         if not label:
             continue
         rank = FINISH_RANK.get(label, -1)

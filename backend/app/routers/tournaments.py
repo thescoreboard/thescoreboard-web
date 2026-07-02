@@ -534,6 +534,20 @@ def transition_status(
     if target_status not in TOURNAMENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status: {target_status}")
 
+    _ALLOWED_TRANSITIONS = {
+        "draft":        {"registration", "upcoming", "live"},
+        "registration": {"upcoming", "live", "draft"},
+        "upcoming":     {"live", "registration"},
+        "live":         {"done"},
+        "done":         set(),
+    }
+    allowed = _ALLOWED_TRANSITIONS.get(t.status, set())
+    if target_status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot move from '{t.status}' to '{target_status}'",
+        )
+
     t.status = target_status
 
     # Auto-publish when going live
@@ -732,8 +746,15 @@ def generate_fixtures(
         if len(ids) < 2:
             raise HTTPException(status_code=400, detail="Need at least 2 participants to generate fixtures.")
 
-        # Delete any existing knockout matches before regenerating
+        # Delete any existing knockout matches before regenerating,
+        # but refuse if any match is already in progress or done.
         existing_matches = db.query(Match).filter(Match.event_id == event_id).all()
+        active = [m for m in existing_matches if m.status in ("live", "done")]
+        if active:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot regenerate fixtures: some matches are already live or done.",
+            )
         for m in existing_matches:
             db.delete(m)
         db.flush()

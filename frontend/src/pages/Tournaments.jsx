@@ -15,12 +15,9 @@ const SPORT_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { key: "",          label: "All" },
-  { key: "live",      label: "Live"      },
   { key: "upcoming",  label: "Upcoming"  },
   { key: "completed", label: "Done"      },
 ];
-
-const POLL_INTERVAL = 10_000;
 
 // ── Pill helper ───────────────────────────────────────────────────────────────
 
@@ -110,8 +107,6 @@ export default function Tournaments() {
   useEffect(() => {
     setLoading(true);
     fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL);
-    return () => clearInterval(id);
   }, [fetchData]);
 
   // Keep URL in sync
@@ -133,7 +128,6 @@ export default function Tournaments() {
   const tournaments = data?.tournaments || [];
   const cities      = data?.cities      || [];
   const total       = data?.total       || 0;
-  const liveCount   = tournaments.filter(t => t.status === "live").length;
 
   const activeSportOption = SPORT_OPTIONS.find(s => s.key === sport) || SPORT_OPTIONS[0];
   const hasFilters = sport || status || city || searchQ;
@@ -195,19 +189,6 @@ export default function Tournaments() {
 
           {/* Right actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {/* Live chip — hidden on mobile (shown in filter strip below) */}
-            {liveCount > 0 && (
-              <div className="tourn-live-chip" style={{
-                display: "flex", alignItems: "center", gap: 6,
-                background: "var(--primary)", color: "#fff",
-                padding: "5px 12px", borderRadius: 6,
-                fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-                letterSpacing: 1.5, textTransform: "uppercase",
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", animation: "pulse 1.5s infinite", display: "inline-block" }} />
-                {liveCount} Live
-              </div>
-            )}
             <button
               onClick={() => navigate(isLoggedIn() ? "/organiser" : "/login")}
               className="landing-cta-btn"
@@ -245,12 +226,6 @@ export default function Tournaments() {
                 ) : (
                   <>
                     <span>{total} tournament{total !== 1 ? "s" : ""}</span>
-                    {liveCount > 0 && (
-                      <span style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--primary)", fontWeight: 700 }}>
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--primary)", animation: "pulse 1.5s infinite", display: "inline-block" }} />
-                        {liveCount} live now
-                      </span>
-                    )}
                   </>
                 )}
               </div>
@@ -314,9 +289,6 @@ export default function Tournaments() {
             {/* Status pills */}
             {STATUS_OPTIONS.map(s => (
               <Pill key={s.key} active={status === s.key} onClick={() => setStatus(s.key)}>
-                {s.key === "live" && (
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", animation: "pulse 1.5s infinite", display: "inline-block" }} />
-                )}
                 {s.label}
               </Pill>
             ))}
@@ -436,33 +408,6 @@ export default function Tournaments() {
           </div>
         ) : (
           <>
-            {/* Live section */}
-            {tournaments.filter(t => t.status === "live").length > 0 && !status && (
-              <div style={{ marginBottom: 32 }}>
-                <SectionHeader
-                  label="Live Now"
-                  count={tournaments.filter(t => t.status === "live").length}
-                  accent="var(--primary)"
-                  pulse
-                />
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-                  gap: 16,
-                }}>
-                  {tournaments
-                    .filter(t => t.status === "live")
-                    .map(t => (
-                      <TournamentCard
-                        key={t.tournament_id}
-                        tournament={t}
-                        onClick={() => navigate(`/t/${t.slug}`)}
-                      />
-                    ))}
-                </div>
-              </div>
-            )}
-
             {/* Upcoming section */}
             {tournaments.filter(t => t.status === "upcoming").length > 0 && !status && (
               <div style={{ marginBottom: 32 }}>
@@ -550,19 +495,12 @@ export default function Tournaments() {
 
 // ── Section header ────────────────────────────────────────────────────────────
 
-function SectionHeader({ label, count, accent, pulse }) {
+function SectionHeader({ label, count, accent }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 10,
       marginBottom: 16,
     }}>
-      {pulse && (
-        <span style={{
-          width: 8, height: 8, borderRadius: "50%",
-          background: accent, animation: "pulse 1.5s infinite",
-          display: "inline-block", flexShrink: 0,
-        }} />
-      )}
       <span style={{
         fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 900,
         textTransform: "uppercase", letterSpacing: 0.5,

@@ -52,7 +52,10 @@ def get_current_user_id(
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.split(" ", 1)[1]
     payload = decode_token(token)
-    user_id = int(payload.get("sub", 0))
+    try:
+        user_id = int(payload.get("sub", 0))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid token payload")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
     return user_id
@@ -72,7 +75,10 @@ def get_current_user(
 
     token = authorization.split(" ", 1)[1]
     payload = decode_token(token)
-    user_id = int(payload.get("sub", 0))
+    try:
+        user_id = int(payload.get("sub", 0))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid token payload")
 
     user = db.query(User).filter(User.user_id == user_id, User.is_active != False).first()
     if not user:

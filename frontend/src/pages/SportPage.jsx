@@ -22,12 +22,9 @@ const SPORT_COLOR = {
 
 const STATUS_FILTERS = [
   { key: "",          label: "All"       },
-  { key: "live",      label: "Live"      },
   { key: "upcoming",  label: "Upcoming"  },
   { key: "completed", label: "Completed" },
 ];
-
-const POLL_INTERVAL = 8000;
 
 export default function SportPage() {
   const location = useLocation();
@@ -58,22 +55,18 @@ export default function SportPage() {
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL);
-    return () => clearInterval(id);
   }, [fetchData]);
 
   const allTournaments = data?.tournaments || [];
   const cities         = data?.cities || [];
-  const totalLive      = allTournaments.reduce((s, t) => s + (t.live_count || 0), 0);
 
   // Client-side status filter
   const tournaments = filterStatus
     ? allTournaments.filter(t => t.status === filterStatus)
     : allTournaments;
 
-  const liveTournaments = tournaments.filter(t => t.status === "live");
-  const upcoming        = tournaments.filter(t => t.status === "upcoming");
-  const completed       = tournaments.filter(t => t.status === "completed");
+  const upcoming  = tournaments.filter(t => t.status === "upcoming");
+  const completed = tournaments.filter(t => t.status === "completed");
 
   const pillStyle = (active) => ({
     display: "inline-flex", alignItems: "center", gap: 4,
@@ -119,14 +112,8 @@ export default function SportPage() {
                 }}>
                   {SPORT_LABELS[sportKey] || sportUrl}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                   <span>{allTournaments.length} tournament{allTournaments.length !== 1 ? "s" : ""}</span>
-                  {totalLive > 0 && (
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--primary)", fontWeight: 700 }}>
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--primary)", animation: "pulse 1.5s infinite", display: "inline-block" }}/>
-                      {totalLive} live
-                    </span>
-                  )}
                 </div>
               </div>
             </div>
@@ -247,9 +234,6 @@ export default function SportPage() {
           </div>
         ) : (
           <>
-            {!filterStatus && liveTournaments.length > 0 && (
-              <Section label="Live Now" tournaments={liveTournaments} sportUrl={sportUrl} navigate={navigate} accent={accent} badge />
-            )}
             {!filterStatus && upcoming.length > 0 && (
               <Section label="Upcoming" tournaments={upcoming} sportUrl={sportUrl} navigate={navigate} accent={accent} />
             )}
@@ -271,25 +255,13 @@ export default function SportPage() {
   );
 }
 
-function Section({ label, tournaments, sportUrl, navigate, accent, badge }) {
+function Section({ label, tournaments, sportUrl, navigate, accent }) {
   return (
     <div style={{ marginBottom: 40 }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 10, marginBottom: 16,
         paddingBottom: 10, borderBottom: "2px solid var(--border)",
       }}>
-        {badge && (
-          <span style={{
-            display: "flex", alignItems: "center", gap: 5,
-            background: "var(--primary)", color: "#fff",
-            padding: "3px 10px", borderRadius: 4,
-            fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-            textTransform: "uppercase", letterSpacing: 1.5,
-          }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", animation: "pulse 1.5s infinite", display: "inline-block" }}/>
-            Live
-          </span>
-        )}
         <span style={{
           fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 900,
           textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)",

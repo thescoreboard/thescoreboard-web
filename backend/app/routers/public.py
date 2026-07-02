@@ -829,11 +829,13 @@ def public_register(
             detail="This tournament is not currently accepting registrations",
         )
 
-    # Deduplicate by phone
+    # Look up existing player by phone within this org only.
+    # We scope to org_id to avoid matching a phone that belongs to a different org's player.
     player = None
     if data.phone:
         player = db.query(Player).filter(
-            Player.phone == data.phone.strip()
+            Player.phone == data.phone.strip(),
+            Player.org_id == tournament.org_id,
         ).first()
 
     if not player:
@@ -847,18 +849,16 @@ def public_register(
         db.add(player)
         db.flush()
 
-    # Resolve target events
-    if data.event_ids:
-        target_events = db.query(Event).filter(
-            Event.tournament_id == tournament_id,
-            Event.event_id.in_(data.event_ids),
-            Event.is_active == True,
-        ).all()
-    else:
-        target_events = db.query(Event).filter(
-            Event.tournament_id == tournament_id,
-            Event.is_active == True,
-        ).all()
+    # Resolve target events — require explicit selection (no silent enroll-all)
+    if not data.event_ids:
+        raise HTTPException(status_code=400, detail="Please select at least one event to register for.")
+    target_events = db.query(Event).filter(
+        Event.tournament_id == tournament_id,
+        Event.event_id.in_(data.event_ids),
+        Event.is_active == True,
+    ).all()
+    if not target_events:
+        raise HTTPException(status_code=400, detail="No valid events found for the given event_ids.")
 
     enrolled = []
     for event in target_events:

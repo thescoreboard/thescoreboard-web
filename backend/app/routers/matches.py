@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Optional, Union
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.models.user import User
@@ -28,8 +28,8 @@ router = APIRouter()
 # ── Schemas ───────────────────────────────────────────────────
 
 class ScoreUpdate(BaseModel):
-    score_p1: int
-    score_p2: int
+    score_p1: int = Field(..., ge=0, le=9999)
+    score_p2: int = Field(..., ge=0, le=9999)
     current_server: Optional[int] = None
 
     # Cricket ball-by-ball

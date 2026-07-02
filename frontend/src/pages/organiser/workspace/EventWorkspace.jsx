@@ -13,8 +13,11 @@ import TTScorer        from "../../../components/scoring/TTScorer";
 import BadmintonScorer from "../../../components/scoring/BadmintonScorer";
 import CricketScorer   from "../../../components/scoring/CricketScorer";
 import FootballScorer  from "../../../components/scoring/FootballScorer";
-import OrgHeader       from "../../../components/shared/OrgHeader";
+import OrgHeader            from "../../../components/shared/OrgHeader";
 import { IndividualTab, DoublesTab, TeamTab } from "../../../components/shared/ParticipantsTab";
+import TournamentInfoEditor from "../../../components/organiser/TournamentInfoEditor";
+import SponsorsSection      from "../../../components/organiser/SponsorsSection";
+import { MediaUpload }      from "../../../components/shared/MediaUpload";
 
 const SPORT_META = {
   table_tennis: { abbrev: "🏓", label: "Table Tennis" },
@@ -132,12 +135,15 @@ export default function EventWorkspace() {
   const TABS = ["overview", pTab, "fixtures", ...(showStandings ? ["standings"] : []), "live"];
 
   const tabLabel = (tb) => {
+    if (tb === "overview")   return "Info";
+    if (tb === "players")    return "Registration";
+    if (tb === "pairs")      return "Registration";
+    if (tb === "teams")      return "Registration";
+    if (tb === "fixtures")   return "Fixtures";
+    if (tb === "standings")  return "Standings";
     if (tb === "live"       && currentEvent.sport_key === "cricket")  return "Innings";
     if (tb === "live"       && currentEvent.sport_key === "football") return "Match Day";
-    if (tb === "pairs")      return "Pairs";
-    if (tb === "teams")      return "Teams";
-    if (tb === "players")    return "Players";
-    if (tb === "standings")  return "Standings";
+    if (tb === "live")       return "Live";
     return tb.charAt(0).toUpperCase() + tb.slice(1);
   };
 
@@ -405,6 +411,16 @@ export default function EventWorkspace() {
     catch (e) { flash("Error: " + e.message); }
   };
 
+  const handleEndMatch = async (matchId, winnerPos) => {
+    try {
+      await walkoverMatch(matchId, winnerPos);
+      loadData();
+      if (showStandings) loadStandings();
+      setActiveMatch(null);
+      flash("Match ended.");
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
   const handleWalkover = async (matchId, winnerPos) => {
     try {
       await walkoverMatch(matchId, winnerPos);
@@ -421,10 +437,15 @@ export default function EventWorkspace() {
       <OrgHeader
         user={user}
         onLogout={() => { clearToken(); navigate("/", { replace: true }); }}
+        hideModePill={true}
         crumbs={[
           { label: "My Tournaments", path: "/organiser" },
-          { label: t.name, path: `/organiser/tournament/${tournamentId}` },
-          { label: currentEvent.name },
+          // For multi-sport tournaments, show the tournament overview as an intermediate crumb
+          ...(t.is_multi_sport
+            ? [{ label: t.name, path: `/organiser/tournament/${tournamentId}` }]
+            : []
+          ),
+          { label: t.is_multi_sport ? currentEvent.name : t.name },
         ]}
         right={liveCount > 0 ? (
           <div className="live-badge"><span className="live-dot" /> {liveCount} LIVE</div>
@@ -546,16 +567,122 @@ export default function EventWorkspace() {
                     </div>
                   ))}
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button className="btn btn-primary" onClick={() => setTab(pTab)}>
-                    {isDoubles ? "Manage Pairs" : isTeam ? "Manage Teams" : "Add Players"}
-                  </button>
-                  <button className="btn btn-outline" onClick={() => setTab("fixtures")}>Fixtures</button>
-                  {liveCount > 0 && (
+                {liveCount > 0 && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button className="btn btn-danger" onClick={() => setTab("live")}>Score Live</button>
-                  )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Share Tournament ── */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)", marginBottom: 12 }}>
+                  Share Tournament
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <input
+                    readOnly
+                    value={`${window.location.origin}/t/${t.tournament_id}`}
+                    style={{ flex: 1, minWidth: 200, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--elevated)", color: "var(--ink)", fontSize: 13, fontFamily: "monospace" }}
+                  />
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/t/${t.tournament_id}`);
+                      flash("Link copied!");
+                    }}
+                    style={{ flexShrink: 0 }}
+                  >
+                    Copy Link
+                  </button>
+                  <button
+                    className="btn btn-outline btn-sm"
+                    style={{ flexShrink: 0 }}
+                    onClick={() => {
+                      if (navigator.share) {
+                        navigator.share({ title: t.name, url: `${window.location.origin}/t/${t.tournament_id}` }).catch(() => {});
+                      } else {
+                        navigator.clipboard.writeText(`${window.location.origin}/t/${t.tournament_id}`);
+                        flash("Link copied!");
+                      }
+                    }}
+                  >
+                    Share
+                  </button>
                 </div>
               </div>
+
+              {/* ── Branding ── */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)", marginBottom: 12 }}>
+                  Branding
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Banner</div>
+                    <MediaUpload
+                      label=""
+                      hint="JPEG / PNG / WebP · Recommended 1200×400px"
+                      bucket="logos"
+                      resourceType="tournaments"
+                      resourceId={t.tournament_id}
+                      filename="banner"
+                      enforceAspect="3:1"
+                      maxWidth={1200}
+                      previewUrl={t.banner_url}
+                      previewStyle={{ width: "100%", aspectRatio: "3/1", objectFit: "cover", borderRadius: 6 }}
+                      onUploaded={async (url) => {
+                        try {
+                          await updateTournament(t.tournament_id, { banner_url: url });
+                          loadData();
+                          flash("Banner updated!");
+                        } catch (e) { flash("Error: " + e.message); }
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Logo</div>
+                    <MediaUpload
+                      label=""
+                      hint="JPEG / PNG / WebP · Recommended 400×400px"
+                      bucket="logos"
+                      resourceType="tournaments"
+                      resourceId={t.tournament_id}
+                      filename="logo"
+                      enforceAspect="1:1"
+                      maxWidth={400}
+                      previewUrl={t.logo_url}
+                      previewStyle={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", borderRadius: 6 }}
+                      onUploaded={async (url) => {
+                        try {
+                          await updateTournament(t.tournament_id, { logo_url: url });
+                          loadData();
+                          flash("Logo updated!");
+                        } catch (e) { flash("Error: " + e.message); }
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Sponsors ── */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <SponsorsSection
+                  tournamentId={t.tournament_id}
+                  sponsors={t.sponsors || []}
+                  onRefresh={loadData}
+                  flash={flash}
+                />
+              </div>
+
+              {/* ── Tournament Info (Overview / Prize Pool / Rules / Contact) ── */}
+              <TournamentInfoEditor
+                orgId={t.org_id}
+                tournamentId={t.tournament_id}
+                initialInfo={t.tournament_info || {}}
+                flash={flash}
+                onSaved={loadData}
+              />
 
               {/* ── Tournament Details ── */}
               <div className="card" style={{ marginBottom: 16 }}>
@@ -801,6 +928,7 @@ export default function EventWorkspace() {
                 onGenerateKnockout={handleGenerateKnockout}
                 onAction={handleMatchAction}
                 onSetConfig={handleSetConfig}
+                onEndMatch={handleEndMatch}
                 sportKey={currentEvent.sport_key}
                 participantType={currentEvent.participant_type}
                 participants={
@@ -869,7 +997,7 @@ export default function EventWorkspace() {
                     />
 
                     {currentEvent.format === "direct_knockout" ? (
-                      <KnockoutBracket matches={currentEvent.matches} onAction={handleMatchAction} onSetConfig={handleSetConfig} sportKey={currentEvent.sport_key} />
+                      <KnockoutBracket matches={currentEvent.matches} onAction={handleMatchAction} onSetConfig={handleSetConfig} onEndMatch={handleEndMatch} sportKey={currentEvent.sport_key} />
                     ) : (
                       <>
                         {currentEvent.groups?.map(g => {
@@ -883,7 +1011,7 @@ export default function EventWorkspace() {
                           );
                         })}
                         {currentEvent.matches.filter(m => !m.group_id).map(m => (
-                          <MatchCard key={m.match_id} match={m} onAction={handleMatchAction} onSetConfig={handleSetConfig} sportKey={currentEvent.sport_key} />
+                          <MatchCard key={m.match_id} match={m} onAction={handleMatchAction} onSetConfig={handleSetConfig} onEndMatch={handleEndMatch} sportKey={currentEvent.sport_key} />
                         ))}
                       </>
                     )}
@@ -1612,7 +1740,7 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
 function GroupKnockoutFixtures({
   event, numGroups, setNumGroups, qualifiersPerGroup, setQualifiersPerGroup,
   thirdPlace, setThirdPlace, onGenerateGroups, onGenerateKnockout,
-  onAction, onSetConfig, sportKey, participantType,
+  onAction, onSetConfig, onEndMatch, sportKey, participantType,
   participants = [], isTeamEvent = false, onCreateMatch, onManualGroupSetup, flash,
 }) {
   const allMatches      = event.matches || [];
@@ -1666,54 +1794,23 @@ function GroupKnockoutFixtures({
   // ── Step 2: groups exist ──────────────────────────────────
   return (
     <div>
-      {/* Status banner */}
-      <div className="card" style={{ marginBottom: 20, padding: 16 }}>
-        {!hasKnockout ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-            <div>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, color: allGroupFinalsDone ? "var(--green,#22c55e)" : "var(--primary)", marginBottom: 4 }}>
-                {allGroupFinalsDone ? "✓ All Group Finals Done" : "Group Stage in Progress"}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                {doneGroup}/{groupMatches.length} group matches played
-                {allGroupFinalsDone ? ` — ready to seed the championship bracket.` : `. Complete each group's final to advance.`}
-              </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
-              {allGroupFinalsDone && (
-                <>
-                  <NumInput label="Qualifiers/group" value={qualifiersPerGroup} setter={setQualifiersPerGroup} min={1} max={2} />
-                  <label style={{ display: "flex", flexDirection: "column", gap: 3, cursor: "pointer" }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "var(--muted)" }}>3rd Place</span>
-                    <div style={{ height: 34, display: "flex", alignItems: "center", gap: 6 }}>
-                      <input type="checkbox" checked={thirdPlace} onChange={e => setThirdPlace(e.target.checked)} style={{ cursor: "pointer", width: 16, height: 16 }} />
-                      <span style={{ fontSize: 12 }}>Match</span>
-                    </div>
-                  </label>
-                  <button className="btn btn-primary" style={{ height: 34 }} onClick={onGenerateKnockout}>
-                    Generate Championship →
-                  </button>
-                </>
-              )}
-              <button className="btn btn-outline" style={{ height: 34, fontSize: 11, color: "var(--muted)" }} onClick={onGenerateGroups}>
-                Reset Groups
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <div>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, color: "var(--green,#22c55e)", marginBottom: 4 }}>
-                ✓ Tournament Running
-              </div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                Groups: {doneGroup}/{groupMatches.length} · Championship: {doneKnock}/{knockoutMatches.length}
-              </div>
-            </div>
-            <button className="btn btn-outline" style={{ fontSize: 11, color: "var(--muted)" }} onClick={onGenerateKnockout}>
-              Regenerate Championship
-            </button>
-          </div>
+      {/* Status bar */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          {hasKnockout
+            ? <>Groups: <strong style={{ color: "var(--ink)" }}>{doneGroup}/{groupMatches.length}</strong> · Championship: <strong style={{ color: "var(--ink)" }}>{doneKnock}/{knockoutMatches.length}</strong></>
+            : <><strong style={{ color: "var(--ink)" }}>{doneGroup}/{groupMatches.length}</strong> group matches played</>
+          }
+        </div>
+        {hasKnockout && (
+          <button className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }} onClick={onGenerateKnockout}>
+            Regenerate Championship
+          </button>
+        )}
+        {!hasKnockout && (
+          <button className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }} onClick={onGenerateGroups}>
+            Reset Groups
+          </button>
         )}
       </div>
 
@@ -1743,21 +1840,73 @@ function GroupKnockoutFixtures({
                 : <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>{gm.filter(m => m.status === "done").length}/{gm.length} done</span>
               }
             </div>
-            <KnockoutBracket matches={gm} onAction={onAction} onSetConfig={onSetConfig} sportKey={sportKey} isGroup={true} />
+            <KnockoutBracket matches={gm} onAction={onAction} onSetConfig={onSetConfig} onEndMatch={onEndMatch} sportKey={sportKey} isGroup={true} />
           </div>
         );
       })}
 
+      {/* ── Generate Championship CTA (shown when all group finals done & no knockout yet) ── */}
+      {allGroupFinalsDone && !hasKnockout && (
+        <div className="card" style={{ marginTop: 8, marginBottom: 8, background: "linear-gradient(135deg, var(--primary-dim) 0%, rgba(255,107,53,0.05) 100%)", border: "2px solid var(--primary)", borderRadius: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 900, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--primary)" }}>
+                All Groups Complete!
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                Generate the knockout bracket (Semis & Final) from group results.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "var(--muted)" }}>Qualifiers per group</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button className="btn btn-outline btn-sm" style={{ width: 28, padding: 0 }}
+                  onClick={() => setQualifiersPerGroup(q => Math.max(1, q - 1))}>−</button>
+                <span style={{ fontWeight: 800, fontSize: 16, color: "var(--ink)", minWidth: 20, textAlign: "center" }}>{qualifiersPerGroup}</span>
+                <button className="btn btn-outline btn-sm" style={{ width: 28, padding: 0 }}
+                  onClick={() => setQualifiersPerGroup(q => Math.min(2, q + 1))}>+</button>
+              </div>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={thirdPlace} onChange={e => setThirdPlace(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>Include 3rd Place Match</span>
+            </label>
+          </div>
+
+          <button
+            className="btn btn-gradient btn-lg"
+            style={{ width: "100%", fontSize: 14 }}
+            onClick={onGenerateKnockout}
+          >
+            Generate Semis & Final →
+          </button>
+        </div>
+      )}
+
       {/* Championship bracket */}
       {hasKnockout && (
-        <div style={{ marginTop: 8 }}>
-          <div className="section-label" style={{ marginBottom: 12 }}>
-            Championship Bracket
-            <span style={{ fontWeight: 400, color: "var(--muted)", marginLeft: 8, fontSize: 11 }}>
+        <div style={{ marginTop: 16 }}>
+          <div style={{
+            fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
+            textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)",
+            marginBottom: 12, paddingBottom: 6, borderBottom: "2px solid var(--primary)",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <span>Championship Bracket</span>
+            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 10, textTransform: "none", letterSpacing: 0 }}>
               {doneKnock}/{knockoutMatches.length} done
             </span>
           </div>
-          <KnockoutBracket matches={knockoutMatches} onAction={onAction} onSetConfig={onSetConfig} sportKey={sportKey} />
+          <KnockoutBracket matches={knockoutMatches} onAction={onAction} onSetConfig={onSetConfig} onEndMatch={onEndMatch} sportKey={sportKey} />
         </div>
       )}
     </div>
@@ -1778,11 +1927,8 @@ const STAGE_LABEL = {
   final:       "Final",
 };
 
-function KnockoutBracket({ matches, onAction, onSetConfig, sportKey, isGroup = false }) {
-  const CARD_W  = 172;
-  const CARD_GAP = 10;
-
-  // ── Group bracket: label columns as "Round 1", "Round 2", … ──
+function KnockoutBracket({ matches, onAction, onSetConfig, onEndMatch, sportKey, isGroup = false }) {
+  // ── Group bracket: stack rounds vertically ──────────────────
   if (isGroup) {
     const byRound = {};
     for (const m of matches) {
@@ -1795,49 +1941,34 @@ function KnockoutBracket({ matches, onAction, onSetConfig, sportKey, isGroup = f
     const lastRound = rounds[rounds.length - 1];
 
     return (
-      <div>
-        {rounds.length > 2 && (
-          <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 600, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-            <span>←</span>
-            <span style={{ textTransform: "uppercase", letterSpacing: 1 }}>Swipe to see all rounds</span>
-            <span>→</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {rounds.map(r => (
+          <div key={r}>
+            <div style={{
+              fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
+              textTransform: "uppercase", letterSpacing: 2,
+              color: r === lastRound ? "var(--primary)" : "var(--muted)",
+              marginBottom: 8, paddingBottom: 5,
+              borderBottom: `2px solid ${r === lastRound ? "var(--primary)" : "var(--border)"}`,
+            }}>
+              {r === lastRound ? "Group Final" : `Round ${r}`}
+              <span style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 4, letterSpacing: 0, textTransform: "none", fontSize: 10 }}>
+                ({byRound[r].length})
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {byRound[r].map(m => (
+                <BracketCard key={m.match_id} match={m} onAction={onAction} onSetConfig={onSetConfig} onEndMatch={onEndMatch}
+                  sportKey={sportKey} isFinal={r === lastRound} />
+              ))}
+            </div>
           </div>
-        )}
-        <div style={{ overflowX: "auto", paddingBottom: 10, WebkitOverflowScrolling: "touch" }}>
-          <div style={{
-            display: "flex", gap: CARD_GAP, alignItems: "flex-start",
-            minWidth: rounds.length * (CARD_W + CARD_GAP),
-            paddingRight: 4,
-          }}>
-            {rounds.map(r => (
-              <div key={r} style={{ flex: `0 0 ${CARD_W}px` }}>
-                <div style={{
-                  fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
-                  textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)",
-                  marginBottom: 8, paddingBottom: 5,
-                  borderBottom: `2px solid ${r === lastRound ? "var(--primary)" : "var(--border)"}`,
-                  whiteSpace: "nowrap",
-                }}>
-                  {r === lastRound ? "Group Final" : `Round ${r}`}
-                  <span style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
-                    ({byRound[r].length})
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {byRound[r].map(m => (
-                    <BracketCard key={m.match_id} match={m} onAction={onAction} onSetConfig={onSetConfig}
-                      sportKey={sportKey} isFinal={r === lastRound} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        ))}
       </div>
     );
   }
 
-  // ── Championship / direct knockout: label by stage name ──────
+  // ── Championship / direct knockout: stack stages vertically ──
   const byStage = {};
   for (const m of matches) {
     const s = m.stage || "knockout";
@@ -1849,44 +1980,29 @@ function KnockoutBracket({ matches, onAction, onSetConfig, sportKey, isGroup = f
   if (!stages.length) return null;
 
   return (
-    <div>
-      {stages.length > 2 && (
-        <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 600, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-          <span>←</span>
-          <span style={{ textTransform: "uppercase", letterSpacing: 1 }}>Swipe to see all rounds</span>
-          <span>→</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {stages.map(stage => (
+        <div key={stage}>
+          <div style={{
+            fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
+            textTransform: "uppercase", letterSpacing: 2,
+            color: stage === "final" ? "var(--primary)" : "var(--muted)",
+            marginBottom: 8, paddingBottom: 5,
+            borderBottom: `2px solid ${stage === "final" ? "var(--primary)" : "var(--border)"}`,
+          }}>
+            {STAGE_LABEL[stage] || stage}
+            <span style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 4, letterSpacing: 0, textTransform: "none", fontSize: 10 }}>
+              ({byStage[stage].length})
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {byStage[stage].map(m => (
+              <BracketCard key={m.match_id} match={m} onAction={onAction} onSetConfig={onSetConfig} onEndMatch={onEndMatch}
+                sportKey={sportKey} isFinal={stage === "final"} />
+            ))}
+          </div>
         </div>
-      )}
-      <div style={{ overflowX: "auto", paddingBottom: 10, WebkitOverflowScrolling: "touch" }}>
-        <div style={{
-          display: "flex", gap: CARD_GAP, alignItems: "flex-start",
-          minWidth: stages.length * (CARD_W + CARD_GAP),
-          paddingRight: 4,
-        }}>
-          {stages.map(stage => (
-            <div key={stage} style={{ flex: `0 0 ${CARD_W}px` }}>
-              <div style={{
-                fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
-                textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)",
-                marginBottom: 8, paddingBottom: 5,
-                borderBottom: `2px solid ${stage === "final" ? "var(--primary)" : "var(--border)"}`,
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-              }}>
-                {STAGE_LABEL[stage] || stage}
-                <span style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
-                  ({byStage[stage].length})
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {byStage[stage].map(m => (
-                  <BracketCard key={m.match_id} match={m} onAction={onAction} onSetConfig={onSetConfig}
-                    sportKey={sportKey} isFinal={stage === "final"} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -1898,8 +2014,9 @@ function defaultSetsToWin(match) {
   return 2;  // quarter, round_of_16, round_of_32, preliminary
 }
 
-function BracketCard({ match: m, onAction, onSetConfig, sportKey, isFinal }) {
+function BracketCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey, isFinal }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [endMatchMode, setEndMatchMode]   = useState(false);
   const isLive     = m.status === "live";
   const isDone     = m.status === "done";
   const p1Won      = m.player_1?.is_winner;
@@ -2023,9 +2140,30 @@ function BracketCard({ match: m, onAction, onSetConfig, sportKey, isFinal }) {
               <button className="btn btn-sm btn-danger" style={{ fontSize: 10, padding: "4px 0", width: "100%" }}
                 onClick={() => onAction(m.match_id, "start")}>▶ Start</button>
             )}
-            {isLive && (
-              <button className="btn btn-sm btn-danger" style={{ fontSize: 10, padding: "4px 0", width: "100%" }}
-                onClick={() => onAction(m.match_id, "score")}>Score</button>
+            {isLive && !endMatchMode && (
+              <>
+                <button className="btn btn-sm btn-danger" style={{ fontSize: 10, padding: "4px 0", width: "100%", marginBottom: 3 }}
+                  onClick={() => onAction(m.match_id, "score")}>Score</button>
+                <button className="btn btn-sm btn-outline" style={{ fontSize: 9, padding: "3px 0", width: "100%", color: "var(--muted)" }}
+                  onClick={() => setEndMatchMode(true)}>End Match</button>
+              </>
+            )}
+            {isLive && endMatchMode && (
+              <div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: "var(--ink)", textAlign: "center", marginBottom: 5 }}>Who won?</div>
+                <div style={{ display: "flex", gap: 3 }}>
+                  <button className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: 9, padding: "4px 0" }}
+                    onClick={() => { setEndMatchMode(false); onEndMatch(m.match_id, 1); }}>
+                    {m.player_1?.name?.split(" ")[0] || "P1"}
+                  </button>
+                  <button className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: 9, padding: "4px 0" }}
+                    onClick={() => { setEndMatchMode(false); onEndMatch(m.match_id, 2); }}>
+                    {m.player_2?.name?.split(" ")[0] || "P2"}
+                  </button>
+                </div>
+                <button className="btn btn-sm btn-outline" style={{ fontSize: 8, padding: "3px 0", width: "100%", marginTop: 3, color: "var(--muted)" }}
+                  onClick={() => setEndMatchMode(false)}>Cancel</button>
+              </div>
             )}
             {isDone && (
               <button className="btn btn-sm btn-outline" style={{ fontSize: 10, padding: "4px 0", width: "100%" }}
@@ -2048,8 +2186,9 @@ function BracketCard({ match: m, onAction, onSetConfig, sportKey, isFinal }) {
 }
 
 // ── MatchCard ─────────────────────────────────────────────────
-function MatchCard({ match: m, onAction, onSetConfig, sportKey }) {
+function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [endMatchMode, setEndMatchMode]   = useState(false);
   const isLive     = m.status === "live";
   const isDone     = m.status === "done";
   const sets       = m.sets || [];
@@ -2183,9 +2322,28 @@ function MatchCard({ match: m, onAction, onSetConfig, sportKey }) {
                 <button className="btn btn-sm btn-danger" style={{ padding: "4px 12px" }}
                   onClick={() => onAction(m.match_id, "start")}>▶ Start</button>
               )}
-              {isLive && (
-                <button className="btn btn-sm btn-danger" style={{ padding: "4px 12px" }}
-                  onClick={() => onAction(m.match_id, "score")}>Score</button>
+              {isLive && !endMatchMode && (
+                <>
+                  <button className="btn btn-sm btn-danger" style={{ padding: "4px 12px" }}
+                    onClick={() => onAction(m.match_id, "score")}>Score</button>
+                  <button className="btn btn-sm btn-outline" style={{ padding: "4px 10px", fontSize: 11, color: "var(--muted)" }}
+                    onClick={() => setEndMatchMode(true)}>End Match</button>
+                </>
+              )}
+              {isLive && endMatchMode && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.04)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px" }}>
+                  <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>Who won?</span>
+                  <button className="btn btn-sm btn-primary" style={{ padding: "3px 10px", fontSize: 11 }}
+                    onClick={() => { setEndMatchMode(false); onEndMatch(m.match_id, 1); }}>
+                    {m.player_1?.name?.split(" ")[0] || "P1"} ✓
+                  </button>
+                  <button className="btn btn-sm btn-primary" style={{ padding: "3px 10px", fontSize: 11 }}
+                    onClick={() => { setEndMatchMode(false); onEndMatch(m.match_id, 2); }}>
+                    {m.player_2?.name?.split(" ")[0] || "P2"} ✓
+                  </button>
+                  <button className="btn btn-sm btn-outline" style={{ padding: "3px 8px", fontSize: 10, color: "var(--muted)" }}
+                    onClick={() => setEndMatchMode(false)}>✕</button>
+                </div>
               )}
               {isDone && (
                 <button className="btn btn-sm btn-outline" style={{ padding: "4px 12px" }}
