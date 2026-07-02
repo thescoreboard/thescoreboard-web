@@ -916,6 +916,21 @@ function TournamentInfoDisplay({ info, twoCol = false }) {
 
 // ── Tiered sponsor display wall ───────────────────────────────
 const TIER_ORDER = ["title", "gold", "silver", "bronze", "partner"];
+
+// Renders a sponsor card as a link when the sponsor has a website
+function SponsorLink({ s, style, children }) {
+  if (!s.website) return <div style={style}>{children}</div>;
+  return (
+    <a
+      href={s.website}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ ...style, textDecoration: "none", cursor: "pointer" }}
+    >
+      {children}
+    </a>
+  );
+}
 function SponsorDisplay({ sponsors }) {
   if (!sponsors?.length) return null;
   const byTier = (tier) => sponsors.filter(s => s.tier === tier);
@@ -938,38 +953,40 @@ function SponsorDisplay({ sponsors }) {
 
       {/* Title sponsors — gold gradient card */}
       {titleSponsors.map(s => (
-        <div key={s.sponsor_id || s.name} style={{ marginBottom:8, background:"linear-gradient(135deg, rgba(245,158,11,.12) 0%, rgba(217,119,6,.06) 100%)", border:"1px solid rgba(245,158,11,.35)", borderRadius:12, padding:"12px 14px", display:"flex", alignItems:"center", gap:12 }}>
+        <SponsorLink s={s} key={s.sponsor_id || s.name} style={{ marginBottom:8, background:"linear-gradient(135deg, rgba(245,158,11,.12) 0%, rgba(217,119,6,.06) 100%)", border:"1px solid rgba(245,158,11,.35)", borderRadius:12, padding:"12px 14px", display:"flex", alignItems:"center", gap:12 }}>
           <LogoBox s={s} size={48} radius={10} />
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:2, color:"#d97706", fontFamily:"var(--font-display)", marginBottom:2 }}>Title Sponsor</div>
             <div style={{ fontSize:15, fontWeight:900, color:"var(--ink)", fontFamily:"var(--font-display)" }}>{s.name}</div>
             {s.description && <div style={{ fontSize:11, color:"var(--muted)", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.description}</div>}
           </div>
-        </div>
+          {s.website && <span style={{ fontSize:11, color:"var(--muted)", flexShrink:0 }}>↗</span>}
+        </SponsorLink>
       ))}
 
       {/* Gold sponsors — accent-border card */}
       {goldSponsors.map(s => (
-        <div key={s.sponsor_id || s.name} style={{ marginBottom:8, background:"var(--elevated)", borderLeft:"3px solid #d97706", borderTop:"1px solid var(--border)", borderRight:"1px solid var(--border)", borderBottom:"1px solid var(--border)", borderRadius:"0 10px 10px 0", padding:"10px 12px", display:"flex", alignItems:"center", gap:10 }}>
+        <SponsorLink s={s} key={s.sponsor_id || s.name} style={{ marginBottom:8, background:"var(--elevated)", borderLeft:"3px solid #d97706", borderTop:"1px solid var(--border)", borderRight:"1px solid var(--border)", borderBottom:"1px solid var(--border)", borderRadius:"0 10px 10px 0", padding:"10px 12px", display:"flex", alignItems:"center", gap:10 }}>
           <LogoBox s={s} size={36} radius={8} />
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:1.5, color:"#d97706", fontFamily:"var(--font-display)", marginBottom:1 }}>Gold</div>
             <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)" }}>{s.name}</div>
           </div>
-        </div>
+          {s.website && <span style={{ fontSize:11, color:"var(--muted)", flexShrink:0 }}>↗</span>}
+        </SponsorLink>
       ))}
 
       {/* Silver / Bronze / Partner — 2-col compact grid */}
       {others.length > 0 && (
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 }}>
           {others.map(s => (
-            <div key={s.sponsor_id || s.name} style={{ background:"var(--elevated)", border:"1px solid var(--border)", borderRadius:8, padding:"8px 10px", display:"flex", alignItems:"center", gap:8 }}>
+            <SponsorLink s={s} key={s.sponsor_id || s.name} style={{ background:"var(--elevated)", border:"1px solid var(--border)", borderRadius:8, padding:"8px 10px", display:"flex", alignItems:"center", gap:8 }}>
               <LogoBox s={s} size={28} radius={6} />
               <div style={{ minWidth:0 }}>
                 <div style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:1, color:"var(--muted)", fontFamily:"var(--font-display)" }}>{s.tier}</div>
                 <div style={{ fontSize:11, fontWeight:700, color:"var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</div>
               </div>
-            </div>
+            </SponsorLink>
           ))}
         </div>
       )}
@@ -998,7 +1015,10 @@ function SponsorStickyBar({ sponsors }) {
   return (
     <div style={{ position:"fixed", bottom:0, left:0, right:0, zIndex:200, background:"rgba(14,14,14,.97)", backdropFilter:"blur(14px)", borderTop:"1px solid rgba(255,107,53,.18)", padding:"10px 20px", display:"flex", alignItems:"center", gap:12 }}>
       {/* Title sponsor */}
-      <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0 }}>
+      <div
+        style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0, cursor: titleSponsor.website ? "pointer" : "default" }}
+        onClick={() => { if (titleSponsor.website) window.open(titleSponsor.website, "_blank", "noopener,noreferrer"); }}
+      >
         <div style={{ width:32, height:32, borderRadius:6, background:"rgba(245,158,11,.15)", border:"1px solid rgba(245,158,11,.35)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
           {titleSponsor.logo_url
             ? <img src={titleSponsor.logo_url} alt={titleSponsor.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
@@ -2933,6 +2953,57 @@ export default function TournamentPublic() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // ── Live updates ──────────────────────────────────────────
+  // Primary: WebSocket push from the backend (sub-second score updates).
+  // Fallback: 10s polling whenever the socket is down (also covers dev
+  // setups where the WS proxy isn't configured). The backend warms its HTTP
+  // cache before every WS push, so fallback polls always see fresh data.
+  useEffect(() => {
+    let ws = null, retryId = null, pollId = null, pingId = null, alive = true;
+
+    const apiBase = import.meta.env.VITE_API_URL || "/api";
+    const absBase = apiBase.startsWith("http") ? apiBase : window.location.origin + apiBase;
+    const wsUrl   = absBase.replace(/^http/, "ws") + `/ws/tournament/${slug}`;
+
+    const startPolling = () => {
+      if (!pollId) pollId = setInterval(() => { if (!document.hidden) fetchData(); }, 10_000);
+    };
+    const stopPolling = () => { if (pollId) { clearInterval(pollId); pollId = null; } };
+
+    const connect = () => {
+      if (!alive) return;
+      try { ws = new WebSocket(wsUrl); } catch { startPolling(); return; }
+
+      ws.onopen = () => {
+        stopPolling();
+        pingId = setInterval(() => { if (ws?.readyState === 1) ws.send("ping"); }, 20_000);
+      };
+      ws.onmessage = (e) => {
+        if (e.data === "ping" || e.data === "pong") return;
+        try {
+          const d = JSON.parse(e.data);
+          if (!d?.tournament) return;
+          if (sportUrl) fetchData();   // sport-filtered page has a different payload shape
+          else { setData(d); setLastUpdated(new Date()); }
+        } catch { /* ignore malformed frames */ }
+      };
+      ws.onclose = () => {
+        if (pingId) { clearInterval(pingId); pingId = null; }
+        if (alive) { startPolling(); retryId = setTimeout(connect, 5_000); }
+      };
+      ws.onerror = () => { try { ws.close(); } catch { /* already closed */ } };
+    };
+
+    connect();
+    return () => {
+      alive = false;
+      if (retryId) clearTimeout(retryId);
+      if (pingId)  clearInterval(pingId);
+      stopPolling();
+      try { ws?.close(); } catch { /* noop */ }
+    };
+  }, [slug, sportUrl, fetchData]);
+
   // Apply sport accent + set default active tab when data first loads
   useEffect(() => {
     if (!data) return;
@@ -3055,7 +3126,16 @@ export default function TournamentPublic() {
 
       {/* ── Tab content ── */}
       <div style={{ minHeight:"50vh" }}>
-        {effectiveActive === "fixtures"                && <FixturesSection events={events} onSelect={setSelectedMatch} />}
+        {effectiveActive === "fixtures" && (
+          <>
+            <FixturesSection events={events} onSelect={setSelectedMatch} />
+            {t.sponsors?.length > 0 && (
+              <div style={{ maxWidth:1240, margin:"0 auto", padding:"0 16px" }}>
+                <SponsorDisplay sponsors={t.sponsors} />
+              </div>
+            )}
+          </>
+        )}
         {effectiveActive === "teams"       && hasTeams  && <TeamsSection events={events} isIndividual={isIndividualSport} />}
         {effectiveActive === "leaderboard" && hasBoard  && <LeaderboardSection events={events} />}
         {effectiveActive === "bracket"     && hasBracket && <BracketSection events={events} />}

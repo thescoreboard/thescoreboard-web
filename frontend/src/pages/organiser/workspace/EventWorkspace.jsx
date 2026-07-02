@@ -274,8 +274,7 @@ export default function EventWorkspace() {
         { method: "POST" }
       );
       loadData();
-      const warn = r.warning ? ` ⚠ ${r.warning}` : "";
-      flash(`Knockout bracket created — ${r.matches_created} matches, ${r.qualifiers} qualifiers.${warn}`);
+      flash(`Knockout bracket created — ${r.matches_created} matches, ${r.qualifiers} qualifiers.`);
     } catch (e) { flash("Error: " + e.message); }
   };
 
@@ -994,6 +993,19 @@ export default function EventWorkspace() {
                       isTeam={isTeam || isDoubles}
                       onCreate={handleCreateMatch}
                       flash={flash}
+                      eligibleIds={
+                        // Direct knockout: each player appears once in the bracket,
+                        // so hide anyone already placed. Round robin allows repeats.
+                        currentEvent.format === "direct_knockout"
+                          ? new Set(
+                              allParticipants
+                                .map(p => String(p.id))
+                                .filter(id => !(currentEvent.matches || []).some(m =>
+                                  [m.player_1, m.player_2].some(mp =>
+                                    String(mp?.player_id ?? mp?.team_id) === id)))
+                            )
+                          : null
+                      }
                     />
 
                     {currentEvent.format === "direct_knockout" ? (
@@ -1595,7 +1607,12 @@ function GroupManualAssignment({ numGroups, participants, isTeam, unitLabel, Uni
 // ── ManualMatchCreator ───────────────────────────────────────
 // Collapsible form allowing organisers to create individual matches by hand.
 // Works for both direct_knockout and group_knockout formats.
-function ManualMatchCreator({ format, groups = [], participants = [], isTeam, onCreate, flash }) {
+// eligibleIds (Set of String ids, optional): for knockout stages, restricts the
+// dropdowns to players who qualified from groups AND aren't already placed in
+// a knockout match. Group-stage matches always show the full participant list.
+const KNOCKOUT_ROUND = { preliminary: 1, round_of_16: 1, quarter: 2, semi: 3, final: 4, third_place: 4 };
+
+function ManualMatchCreator({ format, groups = [], participants = [], isTeam, onCreate, flash, eligibleIds = null }) {
   const [open,    setOpen]    = useState(false);
   const [stage,   setStage]   = useState(format === "group_knockout" ? "group" : "semi");
   const [groupId, setGroupId] = useState("");
@@ -1605,6 +1622,11 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
 
   const isGroupKnockout = format === "group_knockout";
   const isGroupStage    = isGroupKnockout && stage === "group";
+
+  // Knockout stages draw from the eligible pool only
+  const pool = (isGroupStage || !eligibleIds)
+    ? participants
+    : participants.filter(p => eligibleIds.has(String(p.id)));
 
   const stageOptions = isGroupKnockout
     ? [
@@ -1632,7 +1654,7 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
       const body = {
         stage:    isGroupStage ? "group" : stage,
         group_id: isGroupStage && groupId ? parseInt(groupId) : null,
-        round:    1,
+        round:    isGroupStage ? 1 : (KNOCKOUT_ROUND[stage] || 1),
         ...(isTeam
           ? { team1_id: parseInt(p1), team2_id: parseInt(p2) }
           : { player1_id: parseInt(p1), player2_id: parseInt(p2) }
@@ -1699,13 +1721,19 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
           No {isTeam ? "teams" : "players"} added yet. Add participants first.
         </div>
+      ) : pool.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+          No eligible {isTeam ? "teams" : "players"} for this stage — either the
+          group finals aren't finished yet, or everyone who qualified is already
+          placed in a knockout match.
+        </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 28px 1fr", gap: 8, alignItems: "end", marginBottom: 14 }}>
           <div>
             <label style={lStyle}>{isTeam ? "Team" : "Player"} 1</label>
             <select style={iStyle} value={p1} onChange={e => setP1(e.target.value)}>
               <option value="">— Select —</option>
-              {participants.filter(p => String(p.id) !== p2).map(p => (
+              {pool.filter(p => String(p.id) !== p2).map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
@@ -1715,7 +1743,7 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
             <label style={lStyle}>{isTeam ? "Team" : "Player"} 2</label>
             <select style={iStyle} value={p2} onChange={e => setP2(e.target.value)}>
               <option value="">— Select —</option>
-              {participants.filter(p => String(p.id) !== p1).map(p => (
+              {pool.filter(p => String(p.id) !== p1).map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
@@ -1761,6 +1789,30 @@ function GroupKnockoutFixtures({
 
   const doneGroup  = groupMatches.filter(m => m.status === "done").length;
   const doneKnock  = knockoutMatches.filter(m => m.status === "done").length;
+
+  // Knockout eligibility for the manual match creator:
+  // qualified = winner/loser of a FINISHED group final; minus anyone already
+  // placed in a knockout match. This is what makes the dropdown shrink as
+  // matches are created (8 qualified → create match 1 → 6 remain, etc).
+  const qualifiedIds = new Set(
+    (event.groups || []).flatMap(g => {
+      const final = groupMatches.find(m =>
+        m.group_id === g.group_id && m.stage === "final" && m.status === "done");
+      if (!final) return [];
+      return [final.player_1, final.player_2]
+        .map(p => p?.player_id ?? p?.team_id)
+        .filter(id => id != null)
+        .map(String);
+    })
+  );
+  const placedIds = new Set(
+    knockoutMatches.flatMap(m =>
+      [m.player_1, m.player_2]
+        .map(p => p?.player_id ?? p?.team_id)
+        .filter(id => id != null)
+        .map(String))
+  );
+  const knockoutEligibleIds = new Set([...qualifiedIds].filter(id => !placedIds.has(id)));
 
   const NumInput = ({ label, value, setter, min, max }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -1823,6 +1875,7 @@ function GroupKnockoutFixtures({
           isTeam={isTeamEvent}
           onCreate={onCreateMatch}
           flash={flash || (() => {})}
+          eligibleIds={knockoutEligibleIds}
         />
       )}
 

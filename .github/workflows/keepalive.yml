@@ -1,0 +1,16 @@
+# Prevents Render free/starter-tier spin-down: an idle backend cold-starts
+# (30-60s) for the first visitor. A ping every 10 minutes keeps it warm.
+# Disable this workflow if the backend moves to an always-on instance.
+name: Keep backend awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: curl -fsS --max-time 30 https://api.thescoreboard.in/api/health

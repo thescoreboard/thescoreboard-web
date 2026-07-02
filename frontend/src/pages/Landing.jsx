@@ -743,6 +743,20 @@ export default function Landing() {
               </svg>
               @thescoreboard.in
             </a>
+            {/* About Us */}
+            <div style={{ marginTop: 12 }}>
+              <a
+                onClick={() => navigate("/about")}
+                style={{
+                  cursor: "pointer", fontSize: 13, fontWeight: 700,
+                  color: "var(--ink)", textDecoration: "none",
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = "var(--primary)"}
+                onMouseLeave={e => e.currentTarget.style.color = "var(--ink)"}
+              >
+                About Us →
+              </a>
+            </div>
           </div>
           {[
             {

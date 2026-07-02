@@ -13,6 +13,7 @@ from app.models.event import Event
 from app.models.match import Match, MatchParticipant, MatchSet
 from app.models.group import EventParticipant
 from app.models.player import Player, Team
+from app.utils.ratelimit import public_registration_limiter
 
 from pydantic import BaseModel
 
@@ -630,7 +631,14 @@ def _build_tournament_page_data(slug: str, db: Session) -> dict:
             "tournament_info": tournament.tournament_info,
             "org_name":        tournament.organization.name if tournament.organization else None,
             "sponsors": [
-                {"sponsor_id": s.sponsor_id, "name": s.name, "logo_url": s.logo_url, "tier": s.tier}
+                {
+                    "sponsor_id":  s.sponsor_id,
+                    "name":        s.name,
+                    "logo_url":    s.logo_url,
+                    "tier":        s.tier,
+                    "website":     s.website,
+                    "description": s.description,
+                }
                 for s in tournament.sponsors
             ],
         },
@@ -773,7 +781,14 @@ def get_tournament_by_sport(
             "end_date":        str(tournament.end_date) if tournament.end_date else None,
             "org_name":        tournament.organization.name if tournament.organization else None,
             "sponsors": [
-                {"sponsor_id": s.sponsor_id, "name": s.name, "logo_url": s.logo_url, "tier": s.tier}
+                {
+                    "sponsor_id":  s.sponsor_id,
+                    "name":        s.name,
+                    "logo_url":    s.logo_url,
+                    "tier":        s.tier,
+                    "website":     s.website,
+                    "description": s.description,
+                }
                 for s in tournament.sponsors
             ],
         },
@@ -810,7 +825,8 @@ def search(q: str, db: Session = Depends(get_db)):
 
 # ── Public registration ───────────────────────────────────────
 
-@router.post("/tournaments/{tournament_id}/register")
+@router.post("/tournaments/{tournament_id}/register",
+             dependencies=[Depends(public_registration_limiter)])
 def public_register(
     tournament_id: int,
     data: PublicRegistration,

@@ -17,7 +17,9 @@ from app.database import get_db
 from app.models.user import User
 from app.models.event import Event
 from app.models.match import Match, MatchParticipant, MatchSet
+from app.models.organization import OrgMember
 from app.models.player import Player, Team
+from app.models.tournament import Tournament
 from app.schemas.match import MatchCreate, MatchOut, MatchStatusUpdate
 from app.utils.auth import get_current_user, get_current_user_id
 from app.sports.registry import get_sport_engine
@@ -74,6 +76,26 @@ def _load_match(match_id: int, db: Session) -> Match:
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
     return match
+
+
+def _check_event_access(event: Event, user: User, db: Session) -> None:
+    """
+    Only members of the organization that owns the tournament (or superadmins)
+    may modify matches. Every mutating match endpoint must call this — a valid
+    JWT alone is NOT enough (any registered player would qualify otherwise).
+    """
+    if user.is_superadmin:
+        return
+    org_id = (
+        db.query(Tournament.org_id)
+        .filter(Tournament.tournament_id == event.tournament_id)
+        .scalar()
+    )
+    member = db.query(OrgMember).filter(
+        OrgMember.org_id == org_id, OrgMember.user_id == user.user_id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not authorized for this tournament")
 
 
 def _serialize_match(m: Match) -> dict:
@@ -150,29 +172,108 @@ def _place_in_match(
         db.add(MatchParticipant(match_id=target.match_id, player_id=participant_id, position=position))
 
 
-def _advance_winner(match: Match, winner_position: Optional[int], db: Session) -> None:
-    """
-    After a direct-knockout match finishes, propagate the winner into the
-    correct slot of the next-round match (and the loser into the third-place
-    match when the stage is 'semi').
+# Canonical stage ordering. Advancement is keyed off STAGE, not the round
+# column: manually-created matches all carry round=1, so grouping by round
+# would strand their winners ("knockout" is a legacy alias for round_of_16).
+_STAGE_SEQ = {
+    "preliminary": 0, "round_of_32": 1, "round_of_16": 2, "knockout": 2,
+    "quarter": 3, "semi": 4, "final": 5,
+}
 
-    Bracket position mapping
-    ─────────────────────────
-    For rounds after the first:  match k → next-round match k//2, position k%2+1
-    For the first round (byes possible):
-        bye_count = 2*|next_round| - |current_round|
-        match k → next-round match (bye_count+k)//2, position (bye_count+k)%2+1
-    """
-    # Terminal stages never propagate; "group" stage = old round-robin rows, also skip
-    if not winner_position or match.stage in ("third_place", "final", "group"):
-        return
 
-    # Use the already-loaded event relationship (set via joinedload in _load_match).
-    # Fall back to a DB query only if the relationship wasn't eager-loaded.
+def _stage_key(m: Match) -> int:
+    return _STAGE_SEQ.get(m.stage, 0)
+
+
+def _bracket_stages(match: Match, db: Session) -> Optional[dict]:
+    """
+    Load this match's bracket (same group scope, non-terminal stages) grouped
+    by canonical stage order. Returns None when the event has no bracket.
+    """
     event = match.event if match.event is not None else (
         db.query(Event).filter(Event.event_id == match.event_id).first()
     )
     if not event or event.format not in ("direct_knockout", "group_knockout"):
+        return None
+
+    q = db.query(Match).filter(
+        Match.event_id == match.event_id,
+        Match.stage.notin_(["third_place", "group"]),
+    )
+    if match.group_id is not None:
+        q = q.filter(Match.group_id == match.group_id)
+    else:
+        q = q.filter(Match.group_id == None)  # noqa: E711
+    bracket_matches = (
+        q.options(joinedload(Match.participants), joinedload(Match.sets))
+        .order_by(Match.round, Match.match_id)
+        .all()
+    )
+
+    by_stage: dict = defaultdict(list)
+    for m in bracket_matches:
+        by_stage[_stage_key(m)].append(m)
+    return by_stage
+
+
+def _next_slot(match: Match, by_stage: dict):
+    """
+    Return (next_match, position, match_k): the slot this match's winner feeds
+    into. next_match is None for terminal/unmapped matches. match_k is the
+    match's index within its own stage (used for 3rd-place slot assignment).
+
+    Bracket position mapping
+    ─────────────────────────
+    For stages after the first:  match k → next-stage match k//2, position k%2+1
+    For the first stage (byes possible):
+        bye_count = 2*|next_stage| - |current_stage|
+        match k → next-stage match (bye_count+k)//2, position (bye_count+k)%2+1
+    """
+    keys = sorted(by_stage.keys())
+    cur  = _stage_key(match)
+    if cur not in keys:
+        return None, None, 0
+    cur_matches = by_stage[cur]
+    match_k = next(
+        (i for i, m in enumerate(cur_matches) if m.match_id == match.match_id), None)
+    if match_k is None:
+        return None, None, 0
+    idx = keys.index(cur)
+    if idx + 1 >= len(keys):
+        return None, None, match_k
+    next_matches = by_stage[keys[idx + 1]]
+    # First stage may have byes; offset so its winners land after bye players.
+    bye_count = (2 * len(next_matches) - len(cur_matches)) if idx == 0 else 0
+    next_k = (bye_count + match_k) // 2
+    pos    = (bye_count + match_k) % 2 + 1
+    if next_k >= len(next_matches):
+        return None, None, match_k
+    return next_matches[next_k], pos, match_k
+
+
+def _find_third_place(match: Match, db: Session) -> Optional[Match]:
+    tq = db.query(Match).filter(
+        Match.event_id == match.event_id, Match.stage == "third_place"
+    )
+    if match.group_id is not None:
+        tq = tq.filter(Match.group_id == match.group_id)
+    else:
+        tq = tq.filter(Match.group_id == None)  # noqa: E711
+    return tq.first()
+
+
+def _advance_winner(match: Match, winner_position: Optional[int], db: Session) -> None:
+    """
+    After a knockout match finishes, propagate the winner into the correct
+    slot of the next-stage match (and the loser into the third-place match
+    when the stage is 'semi').
+    """
+    # Terminal stages never propagate; "group" stage = round-robin rows, also skip
+    if not winner_position or match.stage in ("third_place", "final", "group"):
+        return
+
+    by_stage = _bracket_stages(match, db)
+    if by_stage is None:
         return
 
     winner_mp = next((p for p in match.participants if p.position == winner_position), None)
@@ -183,71 +284,90 @@ def _advance_winner(match: Match, winner_position: Optional[int], db: Session) -
     winner_id = winner_mp.player_id or winner_mp.team_id
     is_team   = winner_mp.team_id is not None
 
-    # Use indexed columns only — filter on event_id (indexed) first,
-    # then stage. The event relationship is already loaded on match so no
-    # extra Event query needed here.
-    q = db.query(Match).filter(
-        Match.event_id == match.event_id,
-        Match.stage.notin_(["third_place", "group"]),
-    )
-    if match.group_id is not None:
-        q = q.filter(Match.group_id == match.group_id)
-    else:
-        q = q.filter(Match.group_id == None)  # noqa: E711
-    bracket_matches = q.order_by(Match.round, Match.match_id).all()
-
-    by_round = defaultdict(list)
-    for m in bracket_matches:
-        by_round[m.round].append(m)
-
-    rounds        = sorted(by_round.keys())
-    current_round = match.round
-    round_idx     = rounds.index(current_round)
-
-    # ── Advance winner to next bracket round ─────────────────
-    if round_idx + 1 < len(rounds):
-        next_round          = rounds[round_idx + 1]
-        current_rnd_matches = by_round[current_round]
-        next_rnd_matches    = by_round[next_round]
-
-        match_k = next(
-            (i for i, m in enumerate(current_rnd_matches) if m.match_id == match.match_id),
-            None,
-        )
-        if match_k is not None:
-            earliest_round = rounds[0]
-            if current_round == earliest_round:
-                # Round 1 may have byes; compute offset so r1 winners land in
-                # the correct slots of round 2 (after all bye-player pairs).
-                bye_count = 2 * len(next_rnd_matches) - len(current_rnd_matches)
-            else:
-                bye_count = 0
-
-            next_k = (bye_count + match_k) // 2
-            pos    = (bye_count + match_k) % 2 + 1
-
-            if next_k < len(next_rnd_matches):
-                _place_in_match(next_rnd_matches[next_k], winner_id, pos, is_team, db)
+    next_match, pos, match_k = _next_slot(match, by_stage)
+    if next_match is not None:
+        _place_in_match(next_match, winner_id, pos, is_team, db)
 
     # ── Advance loser to third-place match (semi-finals only) ─
     if match.stage == "semi" and loser_mp:
         loser_id = loser_mp.player_id or loser_mp.team_id
         if loser_id:
-            tq = db.query(Match).filter(
-                Match.event_id == match.event_id, Match.stage == "third_place"
-            )
-            if match.group_id is not None:
-                tq = tq.filter(Match.group_id == match.group_id)
-            else:
-                tq = tq.filter(Match.group_id == None)  # noqa: E711
-            third = tq.first()
+            third = _find_third_place(match, db)
             if third:
-                semi_matches = sorted(by_round.get(current_round, []), key=lambda m: m.match_id)
-                semi_k       = next(
-                    (i for i, m in enumerate(semi_matches) if m.match_id == match.match_id),
-                    0,
-                )
-                _place_in_match(third, loser_id, semi_k + 1, is_team, db)
+                _place_in_match(third, loser_id, match_k + 1, is_team, db)
+
+
+def _retract_advancement(match: Match, db: Session) -> None:
+    """
+    Before re-running a finished match (rematch / undo across a set boundary),
+    pull its winner — and for semis, the loser placed in the 3rd-place match —
+    back OUT of the downstream slots. Raises 409 when the downstream match has
+    already started: re-running would silently corrupt the bracket otherwise.
+    """
+    if match.status != "done":
+        return
+
+    # A completed group final feeds the championship via generate-knockout —
+    # re-running it after the championship exists would desync the bracket.
+    if match.group_id is not None and match.stage == "final":
+        championship = db.query(Match).filter(
+            Match.event_id == match.event_id,
+            Match.group_id == None,  # noqa: E711
+        ).count()
+        if championship:
+            raise HTTPException(
+                status_code=409,
+                detail="The championship bracket was already generated from this "
+                       "group's result. Regenerate the championship after changing "
+                       "this match.",
+            )
+        return
+
+    if match.stage in ("third_place", "final", "group", "round_robin"):
+        return
+
+    by_stage = _bracket_stages(match, db)
+    if by_stage is None:
+        return
+
+    winner_mp = next((p for p in match.participants if p.is_winner), None)
+    if not winner_mp:
+        return
+    winner_id = winner_mp.player_id or winner_mp.team_id
+    loser_mp  = next((p for p in match.participants if not p.is_winner), None)
+
+    def _pull(target: Optional[Match], participant_id) -> None:
+        if target is None or participant_id is None:
+            return
+        # Query rows directly — target's already-loaded collections may not
+        # include participants placed via db.add() earlier in this session.
+        placed = next(
+            (p for p in db.query(MatchParticipant)
+                          .filter(MatchParticipant.match_id == target.match_id)
+                          .all()
+             if (p.player_id or p.team_id) == participant_id),
+            None,
+        )
+        if not placed:
+            return
+        target_started = target.status != "scheduled" or any(
+            (s.score_p1 or s.score_p2)
+            for s in db.query(MatchSet).filter(MatchSet.match_id == target.match_id).all()
+        )
+        if target_started:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot re-run this match: its result already feeds a match "
+                       "that has started. Reset that match first.",
+            )
+        db.delete(placed)
+        if placed in target.participants:
+            target.participants.remove(placed)
+
+    next_match, _pos, _match_k = _next_slot(match, by_stage)
+    _pull(next_match, winner_id)
+    if match.stage == "semi" and loser_mp:
+        _pull(_find_third_place(match, db), loser_mp.player_id or loser_mp.team_id)
 
 
 def _finish_match(match: Match, winner_position: Optional[int], db: Optional[Session] = None):
@@ -263,10 +383,38 @@ def _finish_match(match: Match, winner_position: Optional[int], db: Optional[Ses
 
 # Debounce state: track the last push timestamp per tournament slug
 # so that rapid score updates (e.g. cricket ball-by-ball) only trigger
-# one full tournament-page rebuild per 500 ms window.
+# one full tournament-page rebuild per debounce window.
 _ws_last_push: dict = {}
+_ws_trailing: set = set()      # slugs with a trailing push already waiting
 _ws_push_lock  = threading.Lock()
 _WS_DEBOUNCE_SECS = 0.3
+
+
+def _debounce_ws_push(slug: str) -> bool:
+    """
+    Rate-limit tournament-page rebuilds to one per _WS_DEBOUNCE_SECS per slug
+    WITHOUT dropping the trailing update: a call landing inside the window
+    waits out the remainder and then proceeds. (The old behaviour returned
+    early, so the LAST update of a burst — e.g. the winning point — could
+    stay invisible to WS clients until the next score change.)
+
+    Returns True when the caller should build + push, False when another
+    waiting call already covers this update.
+    """
+    now = time.monotonic()
+    with _ws_push_lock:
+        wait = _WS_DEBOUNCE_SECS - (now - _ws_last_push.get(slug, 0.0))
+        if wait <= 0:
+            _ws_last_push[slug] = now
+            return True
+        if slug in _ws_trailing:
+            return False           # a trailing push is already scheduled
+        _ws_trailing.add(slug)
+    time.sleep(wait)               # we're on a background-task thread
+    with _ws_push_lock:
+        _ws_trailing.discard(slug)
+        _ws_last_push[slug] = time.monotonic()
+    return True
 
 
 def _push_ws_update(event_id: int) -> None:
@@ -298,13 +446,9 @@ def _push_ws_update(event_id: int) -> None:
         if not manager.has_watchers(slug):
             return
 
-        # Debounce: skip if last push was less than _WS_DEBOUNCE_SECS ago
-        now = time.monotonic()
-        with _ws_push_lock:
-            last = _ws_last_push.get(slug, 0.0)
-            if now - last < _WS_DEBOUNCE_SECS:
-                return
-            _ws_last_push[slug] = now
+        # Debounce with a guaranteed trailing push — never drops the last update
+        if not _debounce_ws_push(slug):
+            return
 
         # Build fresh data (bypasses HTTP cache) and push to WS clients.
         # Also warm the HTTP cache so polling clients get the new data immediately.
@@ -340,7 +484,11 @@ def get_match(
 
 
 @router.get("/events/{event_id}/matches")
-def get_matches(event_id: int, db: Session = Depends(get_db)):
+def get_matches(
+    event_id: int,
+    db: Session = Depends(get_db),
+    _uid: int = Depends(get_current_user_id),
+):
     matches = (
         db.query(Match)
         .filter(Match.event_id == event_id)
@@ -360,11 +508,12 @@ def create_match(
     event_id: int,
     data: MatchCreate,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     event = db.query(Event).filter(Event.event_id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+    _check_event_access(event, user, db)
 
     engine    = get_sport_engine(event.sport_key)
     use_teams = event.participant_type in ("team", "doubles_pair")
@@ -431,9 +580,15 @@ def update_match_status(
     data: MatchStatusUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     match = _load_match(match_id, db)
+    _check_event_access(match.event, user, db)
+    if data.status == "live" and len(match.participants) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Both participants must be assigned before the match can go live",
+        )
     event_id = match.event_id
     match.status = data.status
     if data.table_number is not None:
@@ -460,9 +615,15 @@ def update_score(
     data: ScoreUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     match    = _load_match(match_id, db)   # includes match.event via joinedload
+    _check_event_access(match.event, user, db)
+    if len(match.participants) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Both participants must be assigned before this match can be scored",
+        )
     event_id = match.event_id
     event    = match.event                 # no extra DB query — already loaded
     engine   = get_sport_engine(event.sport_key)
@@ -629,13 +790,19 @@ def finish_match(
     data: FinishMatch,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     """
     Explicitly finish a match — used for football (full time) and
     cricket (all out / overs up / innings end).
     """
     match    = _load_match(match_id, db)   # includes match.event via joinedload
+    _check_event_access(match.event, user, db)
+    if len(match.participants) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Both participants must be assigned before this match can be finished",
+        )
     event_id = match.event_id
     event    = match.event                 # no extra DB query
     engine   = get_sport_engine(event.sport_key)
@@ -750,7 +917,7 @@ def walkover_match(
     winner_position: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     """
     Record a walkover / no-show.
@@ -758,13 +925,19 @@ def walkover_match(
     match winner.  Winner advances in the bracket exactly as after a normal win.
     """
     match = _load_match(match_id, db)
+    _check_event_access(match.event, user, db)
     if match.status == "done":
         raise HTTPException(status_code=400, detail="Match is already done")
     if winner_position not in (1, 2):
         raise HTTPException(status_code=400, detail="winner_position must be 1 or 2")
+    if len(match.participants) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Both participants must be assigned before recording a walkover",
+        )
 
     event_id = match.event_id
-    event  = db.query(Event).filter(Event.event_id == event_id).first()
+    event  = match.event                   # already joinedloaded by _load_match
     engine = get_sport_engine(event.sport_key)
     config = dict(event.sport_config or engine.get_default_config())
     if match.live_state and "sets_to_win" in match.live_state:
@@ -831,9 +1004,10 @@ def undo_set(
     match_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     match = _load_match(match_id, db)
+    _check_event_access(match.event, user, db)
     event_id = match.event_id
     sets  = sorted(match.sets, key=lambda s: s.set_number)
     if not sets:
@@ -841,6 +1015,10 @@ def undo_set(
 
     current = sets[-1]
     if current.score_p1 == 0 and current.score_p2 == 0 and len(sets) > 1:
+        if match.status == "done":
+            # Pull the already-propagated winner out of the next bracket slot
+            # (raises 409 if that match has started — prevents silent corruption)
+            _retract_advancement(match, db)
         db.delete(current)
         prev = sets[-2]
         prev.is_complete     = False
@@ -878,9 +1056,13 @@ def rematch(
     match_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     match = _load_match(match_id, db)        # includes match.event via joinedload
+    _check_event_access(match.event, user, db)
+    # Pull the already-propagated winner out of downstream bracket slots first
+    # (raises 409 if the downstream match has started)
+    _retract_advancement(match, db)
     event_id = match.event_id
     event    = match.event                   # no extra DB query
     preserved_sets = (match.live_state or {}).get("sets_to_win")
@@ -911,11 +1093,10 @@ def rematch(
 def delete_match(
     match_id: int,
     db: Session = Depends(get_db),
-    _uid: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
-    match = db.query(Match).filter(Match.match_id == match_id).first()
-    if not match:
-        raise HTTPException(status_code=404, detail="Match not found")
+    match = _load_match(match_id, db)
+    _check_event_access(match.event, user, db)
     db.delete(match)
     db.commit()
     return {"ok": True}

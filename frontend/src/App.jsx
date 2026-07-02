@@ -11,6 +11,7 @@ import Login               from "./pages/auth/Login";
 import Register            from "./pages/auth/Register";
 import PrivacyPolicy       from "./pages/PrivacyPolicy";
 import Terms               from "./pages/Terms";
+import About               from "./pages/About";
 
 // Player
 import PlayerDashboard from "./pages/player/PlayerDashboard";
@@ -60,9 +61,10 @@ export default function App() {
         <Route path="/login"    element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Legal */}
+        {/* Legal / company */}
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms"   element={<Terms />} />
+        <Route path="/about"   element={<About />} />
 
         {/* Organiser */}
         <Route path="/organiser" element={<RequireAuth><OrgDashboard /></RequireAuth>} />

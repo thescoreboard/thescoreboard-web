@@ -20,6 +20,7 @@ from app.schemas.auth import (
     TokenOut, UserOut, PlayerProfileIn, PlayerProfileOut,
 )
 from app.utils.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.utils.ratelimit import login_limiter, register_limiter
 from app.utils.roles import compute_roles
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ router = APIRouter()
 
 # ── Email / password ──────────────────────────────────────────────────────────
 
-@router.post("/register", response_model=TokenOut)
+@router.post("/register", response_model=TokenOut, dependencies=[Depends(register_limiter)])
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
@@ -48,7 +49,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     return TokenOut(access_token=token)
 
 
-@router.post("/login", response_model=TokenOut)
+@router.post("/login", response_model=TokenOut, dependencies=[Depends(login_limiter)])
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email, User.is_active != False).first()
     if not user or not user.password_hash:
@@ -62,7 +63,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 # ── Google SSO ────────────────────────────────────────────────────────────────
 
-@router.post("/google", response_model=TokenOut)
+@router.post("/google", response_model=TokenOut, dependencies=[Depends(login_limiter)])
 def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google login is not configured on this server")
