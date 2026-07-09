@@ -264,7 +264,7 @@ def public_register_team(
 ):
     """
     Public registration for teams (cricket/football) and doubles pairs (TT/badminton).
-    No auth required. Tournament must be in 'registration' status.
+    No auth required. Tournament must currently have registration open.
     """
     tournament = db.query(Tournament).filter(
         Tournament.tournament_id == tournament_id,
@@ -272,7 +272,7 @@ def public_register_team(
     ).first()
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
-    if tournament.status != "registration":
+    if not tournament.registration_open:
         raise HTTPException(status_code=400, detail="Tournament is not accepting registrations")
 
     # ── Normalise name (doubles sends "name", teams send "team_name")

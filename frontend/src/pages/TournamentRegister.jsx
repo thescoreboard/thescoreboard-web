@@ -647,7 +647,7 @@ export default function TournamentRegister() {
         setTournament(d.tournament);
         setEvents(d.events || []);
 
-        if (d.tournament.status !== "registration") {
+        if (!d.tournament.registration_open) {
           setLoadError("Registration is not currently open for this tournament.");
           return;
         }

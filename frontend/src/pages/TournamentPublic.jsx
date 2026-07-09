@@ -57,23 +57,17 @@ const registerTeam       = (tId, p) => apiPost(`/public/tournaments/${tId}/regis
 
 // ── Status config ─────────────────────────────────────────────
 const STATUS_CFG = {
-  draft:        { label: "Coming Soon",       color: "var(--muted)"   },
-  registration: { label: "Registration Open", color: "#16a34a"        },
-  fixtures:     { label: "Fixtures Set",      color: "#2563eb"        },
-  live:         { label: "Live Now",          color: "var(--primary)" },
-  completed:    { label: "Completed",         color: "var(--muted)"   },
+  draft:     { label: "Coming Soon", color: "var(--muted)"   },
+  live:      { label: "Live Now",    color: "var(--primary)" },
+  completed: { label: "Completed",   color: "var(--muted)"   },
 };
 
 // ── Compute standings from match data ────────────────────────
-function computeStandings(event) {
-  const matches = event.all_matches || [];
-  const isRR    = event.format === "round_robin";
-  const relevant = isRR
-    ? matches
-    : matches.filter(m => m.stage === "group");
-
+// Builds one standings row-set per raw match list (see computeStandings below
+// for the group-splitting wrapper around this).
+function buildStandingsTable(matches) {
   const table = {};
-  for (const m of relevant) {
+  for (const m of matches) {
     if (m.status !== "done" && m.status !== "live") continue;
     const n1 = m.player_1?.name;
     const n2 = m.player_2?.name;
@@ -98,6 +92,38 @@ function computeStandings(event) {
   return Object.values(table).sort((a, b) =>
     b.pts - a.pts || b.w - a.w || (b.sf - b.sa) - (a.sf - a.sa)
   );
+}
+
+// group_knockout events run each group as its own mini bracket, built with
+// the same generic engine as the real championship — so a group's internal
+// matches can carry stage="semi"/"final" too, not just "group". Matches
+// with a `group` name are what actually belong to a group stage regardless
+// of their internal stage label; everything else is the championship bracket
+// and is excluded from the group standings table entirely.
+// Returns [{ group: "Group A" | null, rows: [...] }, ...] — one entry per
+// named group (alphabetical), or a single ungrouped entry for round_robin.
+function computeStandings(event) {
+  const matches = event.all_matches || [];
+  const isRR    = event.format === "round_robin";
+
+  if (isRR) {
+    return [{ group: null, rows: buildStandingsTable(matches) }];
+  }
+
+  const groupMatches = matches.filter(m => m.group);
+  const names = [...new Set(groupMatches.map(m => m.group))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+  if (!names.length) {
+    // No group info on the matches (legacy data) — fall back to one flat table
+    // rather than showing nothing.
+    return [{ group: null, rows: buildStandingsTable(matches) }];
+  }
+
+  return names.map(name => ({
+    group: name,
+    rows: buildStandingsTable(groupMatches.filter(m => m.group === name)),
+  }));
 }
 
 // ── Form header (shared) ──────────────────────────────────────
@@ -995,58 +1021,6 @@ function SponsorDisplay({ sponsors }) {
 }
 
 // ── Sticky sponsor bar ────────────────────────────────────────
-function SponsorStickyBar({ sponsors }) {
-  const storageKey = "tsb_sponsor_bar_dismissed";
-  const [visible, setVisible] = useState(() => !sessionStorage.getItem(storageKey));
-  const titleSponsor  = sponsors?.find(s => s.tier === "title");
-  const otherSponsors = (sponsors?.filter(s => s.tier !== "title") ?? []).slice(0, 4);
-  const dismiss = () => { sessionStorage.setItem(storageKey, "1"); setVisible(false); };
-  if (!visible || !titleSponsor) return null;
-
-  const SmallLogo = ({ s }) => (
-    <div style={{ width:24, height:24, borderRadius:4, background:"rgba(255,255,255,.1)", border:"1px solid rgba(255,255,255,.15)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-      {s.logo_url
-        ? <img src={s.logo_url} alt={s.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
-        : <span style={{ fontFamily:"var(--font-display)", fontSize:7, fontWeight:900, color:"#f59e0b" }}>{s.name[0].toUpperCase()}</span>
-      }
-    </div>
-  );
-
-  return (
-    <div style={{ position:"fixed", bottom:0, left:0, right:0, zIndex:200, background:"rgba(14,14,14,.97)", backdropFilter:"blur(14px)", borderTop:"1px solid rgba(255,107,53,.18)", padding:"10px 20px", display:"flex", alignItems:"center", gap:12 }}>
-      {/* Title sponsor */}
-      <div
-        style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0, cursor: titleSponsor.website ? "pointer" : "default" }}
-        onClick={() => { if (titleSponsor.website) window.open(titleSponsor.website, "_blank", "noopener,noreferrer"); }}
-      >
-        <div style={{ width:32, height:32, borderRadius:6, background:"rgba(245,158,11,.15)", border:"1px solid rgba(245,158,11,.35)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-          {titleSponsor.logo_url
-            ? <img src={titleSponsor.logo_url} alt={titleSponsor.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
-            : <span style={{ fontFamily:"var(--font-display)", fontSize:10, fontWeight:900, color:"#f59e0b" }}>{titleSponsor.name[0].toUpperCase()}</span>
-          }
-        </div>
-        <div style={{ minWidth:0 }}>
-          <div style={{ fontSize:8, fontWeight:800, textTransform:"uppercase", letterSpacing:1.5, color:"#d97706", fontFamily:"var(--font-display)" }}>Title Sponsor</div>
-          <div style={{ fontSize:12, fontWeight:700, color:"#fff", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{titleSponsor.name}</div>
-        </div>
-      </div>
-
-      {/* Divider + other logos */}
-      {otherSponsors.length > 0 && (
-        <>
-          <div style={{ width:1, height:28, background:"rgba(255,255,255,.12)", flexShrink:0 }} />
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            {otherSponsors.map(s => <SmallLogo key={s.sponsor_id || s.name} s={s} />)}
-          </div>
-        </>
-      )}
-
-      {/* Dismiss */}
-      <button onClick={dismiss} style={{ background:"none", border:"none", color:"rgba(255,255,255,.4)", fontSize:18, lineHeight:1, cursor:"pointer", padding:"0 4px", flexShrink:0 }}>×</button>
-    </div>
-  );
-}
-
 // ── Match detail modal ────────────────────────────────────────
 
 function parseCricketOvers(raw) {
@@ -1586,17 +1560,7 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
   const teamCount   = events.reduce((n, ev) => n + (ev.participants || []).length, 0);
 
   // Status badge label for left panel (non-live)
-  const STATUS_BADGE = {
-    live:"LIVE", registration:"REG OPEN", completed:"COMPLETED",
-    draft:"COMING SOON", fixtures:"FIXTURES SET",
-  };
-
-  // Stats strip items
-  const statsItems = [
-    { label:"Matches", val: totalMatches, color:"var(--ink)" },
-    { label:"Done",    val: doneMatches,  color:"#16a34a" },
-    { label: teamCount > 0 ? "Teams" : "Players", val: teamCount > 0 ? teamCount : totalPlayers, color:"var(--ink)" },
-  ];
+  const STATUS_BADGE = { live: "LIVE", completed: "COMPLETED", draft: "COMING SOON" };
 
   // Team abbreviation helper
   const teamAbbr = (name) => {
@@ -1691,24 +1655,12 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
             </div>
           )}
 
-          {/* Register CTA */}
-          {onRegister && status === "registration" && (
+          {/* Register CTA — availability is date-driven (registration_open), not the lifecycle status */}
+          {onRegister && tournament.registration_open && (
             <button onClick={onRegister} style={{ marginTop:16, background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
               Register Now →
             </button>
           )}
-        </div>
-
-        {/* Stats strip */}
-        <div style={{ position:"relative", zIndex:2 }}>
-          <div style={{ display:"inline-flex", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden", boxShadow:"0 2px 10px rgba(0,0,0,.06)" }}>
-            {statsItems.map((s, i) => (
-              <div key={s.label} style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"14px 28px", borderRight: i < statsItems.length - 1 ? "1px solid var(--border)" : "none" }}>
-                <span style={{ fontFamily:"var(--font-display)", fontSize:26, fontWeight:900, color:s.color, lineHeight:1 }}>{s.val}</span>
-                <span style={{ fontSize:11, color:"var(--muted)", marginTop:4, fontWeight:500 }}>{s.label}</span>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -2162,62 +2114,73 @@ function LiveStrip({ liveMatches }) {
   );
 }
 
-// ── Sticky nav (broadcast style: logo + tabs + utilities) ─────
-function SectionNav({ sections, activeId, onNav, darkMode, onToggleDark, slug, tournament }) {
-  const w = useW();
-  const isMobile = w < 640;
+// ── Top bar (broadcast style: logo + utilities only) ──────────
+// Reuses the exact classes OrgHeader uses (.site-header / .header-row /
+// .header-brand) so the public tournament header and the organiser header
+// look like the same product. Sits above the hero — tabs come AFTER the
+// hero (see TabBar below), matching the reference layout: identity block
+// first, tab bar underneath it, not fused into the same sticky strip.
+function TopBar({ darkMode, onToggleDark }) {
   return (
-    <div style={{ position:"sticky", top:0, zIndex:200, background:"var(--surface)", borderBottom:"2px solid var(--ink)", backdropFilter:"blur(12px)" }}>
-      <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "0 12px" : "0 40px", height:52, display:"flex", alignItems:"center", gap:0 }}>
-
-        {/* Brand — full wordmark on all screen sizes, just scaled down on mobile */}
-        <span style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 8 : 12, fontWeight:900, letterSpacing: isMobile ? 1 : 2, marginRight: isMobile ? 8 : 36, flexShrink:0, textTransform:"uppercase", lineHeight:1, whiteSpace:"nowrap" }}>
-          <span style={{ color:"var(--primary)" }}>THE</span>
-          <span style={{ color:"var(--ink)" }}>SCORE</span>
-          <span style={{ color:"var(--primary)" }}>BOARD</span>
+    <header className="site-header">
+      <div className="header-row">
+        <span className="header-brand">
+          The<span className="accent">Score</span>Board
         </span>
 
-        {/* Tab buttons */}
-        <div style={{ display:"flex", flex:1, height:"100%", gap:0, overflowX:"auto", scrollbarWidth:"none", msOverflowStyle:"none" }}>
-          {sections.map(s => {
-            const active = activeId === s.id;
-            return (
-              <button key={s.id} onClick={() => onNav(s.id)} style={{
-                padding: isMobile ? "0 10px" : "0 20px", border:"none",
-                borderBottom: active ? "3px solid var(--primary)" : "3px solid transparent",
-                marginBottom:"-2px",
-                cursor:"pointer", background:"transparent",
-                color: active ? "var(--primary)" : "var(--muted)",
-                fontFamily:"var(--font-display)", fontSize: isMobile ? 7 : 8, fontWeight:800, letterSpacing:1.5,
-                display:"flex", alignItems:"center", gap:4, height:"100%",
-                transition:"color .15s", flexShrink:0, textTransform:"uppercase",
-              }}>
-                {s.label.toUpperCase()}
-                {s.count != null && s.count > 0 && (
-                  <span style={{
-                    background: active ? "var(--primary)" : "var(--elevated)",
-                    color: active ? "#fff" : "var(--muted)",
-                    borderRadius:3, padding:"1px 5px", fontSize:7, fontWeight:800,
-                    transition:"all .15s",
-                  }}>
-                    {s.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Utilities — dark mode toggle only (share button is in the hero) */}
-        <div style={{ display:"flex", gap:6, flexShrink:0, alignItems:"center" }}>
-          <button onClick={onToggleDark} style={{ background:"var(--elevated)", border:"1px solid var(--border)", borderRadius:6, width:34, height:34, cursor:"pointer", color:"var(--muted)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            {darkMode
-              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            }
-          </button>
-        </div>
+        <button onClick={onToggleDark} style={{ background:"var(--elevated)", border:"1px solid var(--border)", borderRadius:6, width:34, height:34, cursor:"pointer", color:"var(--muted)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+          {darkMode
+            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.79"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          }
+        </button>
       </div>
+    </header>
+  );
+}
+
+// ── Tab bar — sits below the hero (tournament identity block), sticky
+// under the top bar so it stays reachable while scrolling tab content. ──
+function TabBar({ sections, activeId, onNav }) {
+  const w = useW();
+  const isMobile = w < 640;
+  const topBarHeight = isMobile ? 52 : 56;
+  return (
+    <div
+      className="breadcrumb-row"
+      style={{
+        height: "auto", padding: isMobile ? "0 12px" : "0 24px",
+        position: "sticky", top: topBarHeight, zIndex: 190,
+        background: "var(--surface)", borderBottom: "1px solid var(--border)",
+      }}
+    >
+      {sections.map(s => {
+        const active = activeId === s.id;
+        return (
+          <button key={s.id} onClick={() => onNav(s.id)} style={{
+            padding: isMobile ? "10px 8px" : "10px 16px", border:"none",
+            borderBottom: active ? "3px solid var(--primary)" : "3px solid transparent",
+            marginBottom:"-1px",
+            cursor:"pointer", background:"transparent",
+            color: active ? "var(--primary)" : "var(--muted)",
+            fontFamily:"var(--font-display)", fontSize: isMobile ? 9 : 10, fontWeight:800, letterSpacing:1,
+            display:"flex", alignItems:"center", gap:4,
+            transition:"color .15s", flexShrink:0, textTransform:"uppercase", whiteSpace:"nowrap",
+          }}>
+            {s.label.toUpperCase()}
+            {s.count != null && s.count > 0 && (
+              <span style={{
+                background: active ? "var(--primary)" : "var(--elevated)",
+                color: active ? "#fff" : "var(--muted)",
+                borderRadius:3, padding:"1px 5px", fontSize:8, fontWeight:800,
+                transition:"all .15s",
+              }}>
+                {s.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -2260,6 +2223,50 @@ function RegisterSection({ events, tournament }) {
 }
 
 // ── Info section (broadcast style) ───────────────────────────
+// ── Title sponsor spotlight — shown at the top of the Info tab ──
+function TitleSponsorCard({ sponsor }) {
+  const card = {
+    background: "var(--surface)", border: "1.5px solid var(--primary)",
+    borderRadius: 12, padding: "20px 22px",
+  };
+  const logo = (
+    <div style={{ width:52, height:52, borderRadius:10, flexShrink:0, background:"var(--elevated)", border:"1px solid var(--border)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {sponsor.logo_url
+        ? <img src={sponsor.logo_url} alt={sponsor.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+        : <span style={{ fontFamily:"var(--font-display)", fontSize:20, fontWeight:900, color:"var(--primary)" }}>{sponsor.name[0].toUpperCase()}</span>
+      }
+    </div>
+  );
+
+  const inner = (
+    <>
+      <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+        {logo}
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:2, color:"var(--primary)", marginBottom:3, textTransform:"uppercase" }}>
+            🏆 Title Sponsor
+          </div>
+          <div style={{ fontFamily:"var(--font-display)", fontSize:17, fontWeight:900, color:"var(--ink)" }}>{sponsor.name}</div>
+        </div>
+        {sponsor.website && <span style={{ fontSize:13, color:"var(--muted)", flexShrink:0 }}>↗</span>}
+      </div>
+      {sponsor.description && (
+        <div style={{ fontSize:13, color:"var(--muted)", lineHeight:1.65, marginTop:14 }}>{sponsor.description}</div>
+      )}
+    </>
+  );
+
+  return (
+    <div style={card}>
+      {sponsor.website ? (
+        <a href={sponsor.website} target="_blank" rel="noopener noreferrer" style={{ textDecoration:"none", display:"block" }}>
+          {inner}
+        </a>
+      ) : inner}
+    </div>
+  );
+}
+
 function InfoSection({ info, tournament }) {
   const w = useW();
   const isMobile = w < 640;
@@ -2283,12 +2290,13 @@ function InfoSection({ info, tournament }) {
   const dateStr   = startDate && endDate && endDate !== startDate
     ? `${startDate} – ${endDate}` : startDate || null;
   const location  = [tournament.city, tournament.state].filter(Boolean).join(", ") || null;
+  const titleSponsor = tournament.sponsors?.find(s => s.tier === "title") ?? null;
 
   return (
-    <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
+    <div style={{ maxWidth:820, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
       <BroadcastSectionHeader title="TOURNAMENT INFO" />
 
-      <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap:16, alignItems:"start" }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── Basic Details card — always shown ── */}
         <div style={card}>
@@ -2331,6 +2339,9 @@ function InfoSection({ info, tournament }) {
           </div>
         </div>
 
+        {/* ── Title sponsor spotlight ── */}
+        {titleSponsor && <TitleSponsorCard sponsor={titleSponsor} />}
+
         {/* ── Prize Pool / Rules / Contact from tournament_info JSON ── */}
         <TournamentInfoDisplay info={info} twoCol={false} />
 
@@ -2361,22 +2372,45 @@ function FixturesSection({ events, onSelect }) {
   // ── Active filter ──────────────────────────────────────────────
   // "all" | "live" | "upcoming" | "done" | stage key
   const [filter, setFilter] = useState("all");
+  const [stageMenuOpen, setStageMenuOpen] = useState(false);
+  const stageMenuRef = useRef(null);
+  useEffect(() => {
+    if (!stageMenuOpen) return;
+    const onClick = (e) => { if (stageMenuRef.current && !stageMenuRef.current.contains(e.target)) setStageMenuOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [stageMenuOpen]);
+
+  // group_knockout events run each group as its OWN mini single-elimination
+  // bracket, built with the exact same generic bracket engine as the real
+  // championship — so a group's internal decider match also carries
+  // stage="final" (and "semi"/"quarter" for bigger groups). Raw m.stage
+  // alone can't tell a group semifinal from the tournament semifinal; the
+  // presence of group_id is what disambiguates them. Every group match
+  // collapses to a single "group" bucket — the round-by-round shape of each
+  // group's internal bracket isn't meaningful to a spectator, only "which
+  // group is this" is (shown elsewhere on the row).
+  const effectiveStage = (m) => (m.group_id != null ? "group" : (m.stage || ""));
 
   const STAGE_LABELS = {
-    group:"Group Stage", r16:"Round of 16", quarter:"Quarterfinal",
+    group:"Group Stage", preliminary:"Preliminary", round_of_32:"Round of 32",
+    r16:"Round of 16", round_of_16:"Round of 16", quarter:"Quarterfinal",
     semi:"Semifinal", final:"Final", third_place:"3rd Place",
   };
   const getRoundLabel = (m) => {
     if (m.round_name) return m.round_name;
-    if (m.stage && m.stage !== "group" && STAGE_LABELS[m.stage]) return STAGE_LABELS[m.stage];
-    if (m.stage === "group" && m.round != null) return `Round ${m.round}`;
+    const stage = effectiveStage(m);
+    if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
     if (m.round != null) return `Round ${m.round}`;
     return "Match";
   };
 
   // ── Match sort order ─────────────────────────────────────────
-  // Priority: live → group → r16 → quarter → semi → final → 3rd_place → done
-  const STAGE_ORDER = { group:1, r16:2, quarter:3, semi:4, final:5, third_place:6 };
+  // Priority: live → group → preliminary → r32 → r16 → quarter → semi → final → 3rd_place → done
+  const STAGE_ORDER = {
+    group:1, preliminary:2, round_of_32:3, r16:4, round_of_16:4,
+    quarter:5, semi:6, final:7, third_place:8,
+  };
 
   function sortMatches(matches) {
     return [...matches].sort((a, b) => {
@@ -2386,8 +2420,8 @@ function FixturesSection({ events, onSelect }) {
       const aDone = a.status === "done" ? 1 : 0;
       const bDone = b.status === "done" ? 1 : 0;
       if (aDone !== bDone) return aDone - bDone;
-      const aStage = STAGE_ORDER[a.stage] ?? 0;
-      const bStage = STAGE_ORDER[b.stage] ?? 0;
+      const aStage = STAGE_ORDER[effectiveStage(a)] ?? 0;
+      const bStage = STAGE_ORDER[effectiveStage(b)] ?? 0;
       if (aStage !== bStage) return aStage - bStage;
       return (a.round ?? 0) - (b.round ?? 0);
     });
@@ -2400,7 +2434,7 @@ function FixturesSection({ events, onSelect }) {
     if (filter === "upcoming") return matches.filter(m => m.status !== "live" && m.status !== "done");
     if (filter === "done")     return matches.filter(m => m.status === "done");
     // stage key
-    return matches.filter(m => m.stage === filter);
+    return matches.filter(m => effectiveStage(m) === filter);
   }
 
   const multiEvent = events.length > 1;
@@ -2412,25 +2446,20 @@ function FixturesSection({ events, onSelect }) {
   const hasDone     = allMatches.some(m => m.status === "done");
 
   // Collect stages that actually have matches, in display order
-  const STAGE_ORDER_ARR = ["group","r16","quarter","semi","final","third_place"];
-  const presentStages = STAGE_ORDER_ARR.filter(s => allMatches.some(m => m.stage === s));
+  const STAGE_ORDER_ARR = ["group","preliminary","round_of_32","r16","quarter","semi","final","third_place"];
+  const presentStages = STAGE_ORDER_ARR.filter(s => allMatches.some(m => effectiveStage(m) === s));
 
-  // Build pill list — only include pills that have at least 1 match
+  // Status quick-pills — All / Live / Upcoming / Completed. Stage selection
+  // is a separate dropdown below (cleaner than a long row of stage pills
+  // once a tournament has group/quarter/semi/final all at once).
   const pills = [
     { id:"all",      label:"All",         count: allMatches.length },
     ...(hasLive     ? [{ id:"live",      label:"🔴 Live",     count: allMatches.filter(m => m.status === "live").length }] : []),
     ...(hasUpcoming ? [{ id:"upcoming",  label:"Upcoming",    count: allMatches.filter(m => m.status !== "live" && m.status !== "done").length }] : []),
     ...(hasDone     ? [{ id:"done",      label:"Completed",   count: allMatches.filter(m => m.status === "done").length }] : []),
-    // Divider then stage pills (only when there are multiple stages)
-    ...(presentStages.length > 1
-      ? presentStages.map(s => ({
-          id: s,
-          label: STAGE_LABELS[s] || s,
-          count: allMatches.filter(m => m.stage === s).length,
-          isStage: true,
-        }))
-      : []),
   ];
+
+  const isStageFilterActive = presentStages.includes(filter);
 
   if (allMatches.length === 0) {
     return (
@@ -2446,54 +2475,120 @@ function FixturesSection({ events, onSelect }) {
   return (
     <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
 
-      {/* ── Filter pill bar ─────────────────────────────────── */}
-      {pills.length > 1 && (
-        <div style={{
-          display:"flex", gap:6, overflowX:"auto", paddingBottom:16,
-          scrollbarWidth:"none", msOverflowStyle:"none",
-          // thin separator before stage pills
-          flexWrap: isMobile ? "nowrap" : "wrap",
-        }}>
-          {pills.map((pill, i) => {
-            const active = filter === pill.id;
-            // Visual divider before first stage pill
-            const showDivider = pill.isStage && (i === 0 || !pills[i-1]?.isStage);
-            return (
-              <div key={pill.id} style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
-                {showDivider && (
-                  <div style={{ width:1, height:20, background:"var(--border)", flexShrink:0, marginRight:2 }} />
-                )}
-                <button
-                  onClick={() => setFilter(pill.id)}
-                  style={{
-                    display:"inline-flex", alignItems:"center", gap:5,
-                    padding: isMobile ? "6px 12px" : "7px 14px",
-                    borderRadius:999,
-                    border: active ? "none" : "1.5px solid var(--border)",
-                    background: active
-                      ? (pill.id === "live" ? "var(--primary)" : "var(--ink)")
-                      : "var(--surface)",
-                    color: active ? "#fff" : "var(--muted)",
-                    fontFamily:"var(--font-display)", fontSize: isMobile ? 9 : 10,
-                    fontWeight:800, letterSpacing:1, textTransform:"uppercase",
-                    cursor:"pointer", transition:"all .15s", whiteSpace:"nowrap",
-                  }}
-                >
-                  {pill.label}
-                  {pill.count > 0 && (
-                    <span style={{
-                      fontSize: isMobile ? 8 : 9, fontWeight:800,
-                      background: active ? "rgba(255,255,255,.25)" : "var(--elevated)",
+      {/* ── Filter bar: status pills + a stage dropdown ─────────── */}
+      {(pills.length > 1 || presentStages.length > 1) && (
+        <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", paddingBottom:16 }}>
+          {pills.length > 1 && (
+            <div style={{
+              display:"flex", gap:6, overflowX:"auto",
+              scrollbarWidth:"none", msOverflowStyle:"none",
+              flexWrap: isMobile ? "nowrap" : "wrap",
+            }}>
+              {pills.map((pill) => {
+                const active = filter === pill.id;
+                return (
+                  <button
+                    key={pill.id}
+                    onClick={() => setFilter(pill.id)}
+                    style={{
+                      display:"inline-flex", alignItems:"center", gap:5, flexShrink:0,
+                      padding: isMobile ? "6px 12px" : "7px 14px",
+                      borderRadius:999,
+                      border: active ? "none" : "1.5px solid var(--border)",
+                      // Always orange when active — var(--ink) used to be
+                      // white-on-white in dark mode (ink flips to white
+                      // there), making the active pill invisible.
+                      background: active ? "var(--primary)" : "var(--surface)",
                       color: active ? "#fff" : "var(--muted)",
-                      borderRadius:4, padding:"0px 5px",
-                    }}>
-                      {pill.count}
-                    </span>
-                  )}
-                </button>
-              </div>
-            );
-          })}
+                      fontFamily:"var(--font-display)", fontSize: isMobile ? 9 : 10,
+                      fontWeight:800, letterSpacing:1, textTransform:"uppercase",
+                      cursor:"pointer", transition:"all .15s", whiteSpace:"nowrap",
+                    }}
+                  >
+                    {pill.label}
+                    {pill.count > 0 && (
+                      <span style={{
+                        fontSize: isMobile ? 8 : 9, fontWeight:800,
+                        background: active ? "rgba(255,255,255,.25)" : "var(--elevated)",
+                        color: active ? "#fff" : "var(--muted)",
+                        borderRadius:4, padding:"0px 5px",
+                      }}>
+                        {pill.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Stage dropdown — custom-built rather than a native <select>,
+              since the native option list can't be restyled (it shows the
+              browser/OS's own colors — a system-blue highlight in light
+              mode, an unreadable render in dark mode — regardless of any
+              CSS applied to the closed control). */}
+          {presentStages.length > 1 && (
+            <div ref={stageMenuRef} style={{ position:"relative", flexShrink:0 }}>
+              <button
+                onClick={() => setStageMenuOpen(o => !o)}
+                style={{
+                  display:"inline-flex", alignItems:"center", gap:6,
+                  padding: isMobile ? "7px 12px" : "8px 14px",
+                  borderRadius:999, border: isStageFilterActive ? "none" : "1.5px solid var(--border)",
+                  background: isStageFilterActive ? "var(--primary)" : "var(--surface)",
+                  color: isStageFilterActive ? "#fff" : "var(--muted)",
+                  fontFamily:"var(--font-display)", fontSize: isMobile ? 9 : 10,
+                  fontWeight:800, letterSpacing:1, textTransform:"uppercase",
+                  cursor:"pointer", outline:"none", whiteSpace:"nowrap",
+                }}
+              >
+                {isStageFilterActive
+                  ? `${(STAGE_LABELS[filter] || filter).toUpperCase()} (${allMatches.filter(m => effectiveStage(m) === filter).length})`
+                  : "All Stages"}
+                <span style={{ fontSize:9 }}>▾</span>
+              </button>
+
+              {stageMenuOpen && (
+                <div style={{
+                  position:"absolute", top:"calc(100% + 6px)", left:0, zIndex:50,
+                  minWidth:200, background:"var(--surface)", border:"1.5px solid var(--border)",
+                  borderRadius:10, boxShadow:"0 8px 24px rgba(0,0,0,.14)", overflow:"hidden",
+                }}>
+                  <button
+                    onClick={() => { setFilter("all"); setStageMenuOpen(false); }}
+                    style={{
+                      display:"block", width:"100%", textAlign:"left", padding:"10px 14px", border:"none",
+                      background: !isStageFilterActive ? "var(--primary-dim)" : "transparent",
+                      color: !isStageFilterActive ? "var(--primary)" : "var(--ink)",
+                      fontFamily:"var(--font-display)", fontSize:10, fontWeight:800, letterSpacing:1,
+                      textTransform:"uppercase", cursor:"pointer",
+                    }}
+                  >
+                    All Stages
+                  </button>
+                  {presentStages.map(s => {
+                    const active = filter === s;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => { setFilter(s); setStageMenuOpen(false); }}
+                        style={{
+                          display:"block", width:"100%", textAlign:"left", padding:"10px 14px", border:"none",
+                          borderTop:"1px solid var(--border)",
+                          background: active ? "var(--primary-dim)" : "transparent",
+                          color: active ? "var(--primary)" : "var(--ink)",
+                          fontFamily:"var(--font-display)", fontSize:10, fontWeight:800, letterSpacing:1,
+                          textTransform:"uppercase", cursor:"pointer",
+                        }}
+                      >
+                        {(STAGE_LABELS[s] || s).toUpperCase()} ({allMatches.filter(m => effectiveStage(m) === s).length})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -2507,223 +2602,272 @@ function FixturesSection({ events, onSelect }) {
             No matches match this filter.
           </div>
         );
+
+        // Split into per-group buckets (Group A, Group B, ...) vs the
+        // championship/ungrouped bracket — a flat list mixing both reads as
+        // cluttered once there are 30+ group matches. Alphabetical, same
+        // convention as the Players and Table tabs.
+        const groupNames = [...new Set(matches.filter(m => m.group).map(m => m.group))]
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+        const champMatches  = matches.filter(m => !m.group);
+        const hasGroupSplit = groupNames.length > 0;
+
+        const renderRow = (m, i, list) => {
+          const isLive = m.status === "live";
+          const isDone = m.status === "done";
+          const p1win  = m.player_1?.is_winner;
+          const p2win  = m.player_2?.is_winner;
+          const winner = p1win ? m.player_1?.name : p2win ? m.player_2?.name : null;
+          const rowBg  = isLive ? "rgba(255,107,53,.04)" : i % 2 === 0 ? "var(--surface)" : "var(--bg)";
+          // Racket sport helpers (TT / Badminton per-set display)
+          const isRacketFix  = m.sport_key === "table_tennis" || m.sport_key === "badminton";
+          const fSets        = [...(m.sets || [])].sort((a, b) => a.set_number - b.set_number);
+          const fCompSets    = fSets.filter(s => s.is_complete);
+          const fCurSet      = fSets.find(s => !s.is_complete);
+          const fServer      = m.current_server;
+          const fDeuceAt     = m.sport_key === "badminton" ? 20 : 10;
+          const fCS1         = fCurSet?.score_p1 ?? 0;
+          const fCS2         = fCurSet?.score_p2 ?? 0;
+          const fInDeuce     = isRacketFix && isLive && fCS1 >= fDeuceAt && fCS2 >= fDeuceAt;
+          const fIsDeuce     = fInDeuce && fCS1 === fCS2;
+          const fAdvFor      = fInDeuce && Math.abs(fCS1 - fCS2) === 1 ? (fCS1 > fCS2 ? 1 : 2) : null;
+
+          /* ── Mobile: card layout ── */
+          if (isMobile) {
+            return (
+              <div key={m.match_id} onClick={() => onSelect?.(m)} style={{ padding:"14px 16px", borderBottom: i < list.length - 1 ? "1px solid var(--border)" : "none", background: isLive ? "rgba(255,107,53,.04)" : "var(--surface)", cursor: onSelect ? "pointer" : "default" }}>
+                {/* Round + status badge */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                  <span style={{ fontFamily:"var(--font-display)", fontSize:7.5, fontWeight:800, color:"var(--primary)", letterSpacing:1.5, textTransform:"uppercase" }}>
+                    {getRoundLabel(m)}
+                  </span>
+                  {isLive ? (
+                    <span style={{ display:"inline-flex", alignItems:"center", gap:4, border:"1px solid rgba(255,107,53,.4)", color:"var(--primary)", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>
+                      <span className="live-dot" style={{ width:5, height:5, background:"var(--primary)", color:"var(--primary)" }}/>LIVE
+                    </span>
+                  ) : isDone ? (
+                    <span style={{ border:"1px solid rgba(22,163,74,.35)", color:"#16a34a", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>FT</span>
+                  ) : (
+                    <span style={{ border:"1px solid var(--border)", color:"var(--muted)", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>UPCOMING</span>
+                  )}
+                </div>
+                {/* Score row — racket sports show per-set breakdown */}
+                {isRacketFix && (isDone || isLive) ? (
+                  <div>
+                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
+                        {isLive && fServer === 1 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
+                        <span style={{ fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_1?.name || "TBD"}</span>
+                      </div>
+                      <div style={{ display:"flex", gap:2, flexShrink:0 }}>
+                        {fCompSets.map(s => (
+                          <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
+                        ))}
+                        {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
+                      <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
+                        {isLive && fServer === 2 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
+                        <span style={{ fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_2?.name || "TBD"}</span>
+                      </div>
+                      <div style={{ display:"flex", gap:2, flexShrink:0 }}>
+                        {fCompSets.map(s => (
+                          <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
+                        ))}
+                        {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
+                      </div>
+                    </div>
+                    {isLive && (fIsDeuce || fAdvFor) && (
+                      <div style={{ fontSize:9, fontWeight:900, color:"var(--primary)", marginTop:3, textAlign:"right", letterSpacing:0.5 }}>
+                        {fIsDeuce ? "DEUCE" : `ADV ${fAdvFor === 1 ? (m.player_1?.name||"P1").split(" ")[0] : (m.player_2?.name||"P2").split(" ")[0]}`}
+                      </div>
+                    )}
+                    {winner && <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>{winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span></div>}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textAlign:"right" }}>
+                        {m.player_1?.name || "TBD"}
+                      </span>
+                      <div style={{ background:"var(--elevated)", borderRadius:6, padding:"4px 14px", flexShrink:0 }}>
+                        {isDone || isLive ? (
+                          <span style={{ fontFamily:"var(--font-display)", fontSize:18, fontWeight:900, color: isLive ? "var(--primary)" : "var(--ink)", letterSpacing:-1 }}>
+                            {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
+                          </span>
+                        ) : (
+                          <span style={{ fontFamily:"var(--font-display)", fontSize:14, fontWeight:900, color:"var(--muted)" }}>vs</span>
+                        )}
+                      </div>
+                      <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {m.player_2?.name || "TBD"}
+                      </span>
+                    </div>
+                    {winner && (
+                      <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>
+                        {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          }
+
+          /* ── Desktop: flex row ──
+             Round + Score are grouped tightly on the left with a fixed gap;
+             a single flexible spacer pushes Result to the far right. The old
+             3-column grid gave the Score column the whole 1fr of leftover
+             space and centered content inside it, which on a wide screen
+             produced two large, disconnected gaps instead of one — the row
+             read as three floating islands rather than a single match. */
+          return (
+            <div
+              key={m.match_id}
+              onClick={() => onSelect?.(m)}
+              style={{ display:"flex", alignItems:"center", gap:24, padding:"18px 24px", borderBottom: i < list.length - 1 ? "1px solid var(--border)" : "none", background:rowBg, cursor: onSelect ? "pointer" : "default", transition:"background .15s" }}
+              onMouseEnter={e => { if (onSelect) e.currentTarget.style.background = "var(--elevated)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}
+            >
+              {/* Round column */}
+              <div style={{ width:140, flexShrink:0 }}>
+                <span style={{ fontFamily:"var(--font-display)", fontSize:8, fontWeight:800, color:"var(--primary)", letterSpacing:1.5, display:"block", marginBottom:5, textTransform:"uppercase" }}>
+                  {getRoundLabel(m)}
+                </span>
+                {isLive ? (
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:4, border:"1px solid rgba(255,107,53,.4)", color:"var(--primary)", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>
+                    <span className="live-dot" style={{ width:5, height:5, background:"var(--primary)", color:"var(--primary)" }}/>LIVE
+                  </span>
+                ) : isDone ? (
+                  <span style={{ border:"1px solid rgba(22,163,74,.35)", color:"#16a34a", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>FT</span>
+                ) : (
+                  <span style={{ border:"1px solid var(--border)", color:"var(--muted)", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>UPCOMING</span>
+                )}
+                {m.table_number && <div style={{ fontSize:9, color:"var(--muted)", marginTop:3 }}>Table {m.table_number}</div>}
+              </div>
+
+              {/* Score column — racket sports: per-set breakdown. Fixed
+                  width, sitting right next to Round instead of floating in
+                  the middle of the row. */}
+              <div style={{ width:400, flexShrink:0 }}>
+                {isRacketFix && (isDone || isLive) ? (
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ flex:1, display:"flex", flexDirection:"column", gap:3, minWidth:0 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                        {isLive && fServer === 1 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
+                        <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>{m.player_1?.name || "TBD"}</span>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                        {isLive && fServer === 2 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
+                        <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>{m.player_2?.name || "TBD"}</span>
+                      </div>
+                    </div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:3, flexShrink:0 }}>
+                      <div style={{ display:"flex", gap:3 }}>
+                        {fCompSets.map(s => (
+                          <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
+                        ))}
+                        {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
+                      </div>
+                      <div style={{ display:"flex", gap:3 }}>
+                        {fCompSets.map(s => (
+                          <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
+                        ))}
+                        {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
+                      </div>
+                    </div>
+                    {isLive && (fIsDeuce || fAdvFor) && (
+                      <div style={{ flexShrink:0 }}>
+                        <span style={{ fontSize:9, fontWeight:900, color:"var(--primary)", letterSpacing:0.5 }}>
+                          {fIsDeuce ? "DEUCE" : `ADV`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display:"flex", alignItems:"center" }}>
+                    <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, textAlign:"right", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>
+                      {m.player_1?.name || "TBD"}
+                    </span>
+                    <div style={{ padding:"0 24px", textAlign:"center", minWidth:100, flexShrink:0 }}>
+                      {isDone || isLive ? (
+                        <span style={{ fontFamily:"var(--font-display)", fontSize:26, fontWeight:900, color:"var(--ink)", letterSpacing:-1 }}>
+                          {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
+                        </span>
+                      ) : (
+                        <span style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--muted)" }}>vs</span>
+                      )}
+                    </div>
+                    <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>
+                      {m.player_2?.name || "TBD"}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Spacer absorbs remaining width — the row's one gap */}
+              <div style={{ flex:1 }} />
+
+              {/* Result column */}
+              <div style={{ width:160, flexShrink:0 }}>
+                {winner ? (
+                  <span style={{ fontSize:12, color:"var(--muted)", fontWeight:500 }}>
+                    {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
+                  </span>
+                ) : isLive ? (
+                  <span style={{ fontSize:11, color:"var(--primary)", fontWeight:700 }}>In progress</span>
+                ) : (
+                  <span style={{ color:"var(--muted)", fontSize:12 }}>—</span>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        const renderMatchList = (list) => (
+          <div style={{ border:"1px solid var(--border)", borderRadius:12, overflow:"hidden", boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
+            {!isMobile && (
+              <div style={{ display:"flex", alignItems:"center", gap:24, padding:"10px 24px", background:"var(--elevated)", borderBottom:"1px solid var(--border)" }}>
+                <div style={{ width:140, flexShrink:0, fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5 }}>Round</div>
+                <div style={{ width:400, flexShrink:0, fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5 }}>Score</div>
+                <div style={{ flex:1 }} />
+                <div style={{ width:160, flexShrink:0, fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5 }}>Result</div>
+              </div>
+            )}
+            {list.map((m, i) => renderRow(m, i, list))}
+          </div>
+        );
+
+        const groupHeaderStyle = {
+          fontFamily:"var(--font-display)", fontSize:10, fontWeight:800, letterSpacing:1.5,
+          color:"var(--primary)", textTransform:"uppercase", marginBottom:10,
+        };
+
         return (
           <div key={ev.event_id} style={{ marginBottom: multiEvent ? 48 : 0 }}>
             <BroadcastSectionHeader
               title={multiEvent ? ev.name.toUpperCase() : "FIXTURES"}
               count={matches.length}
             />
-            <div style={{ border:"1px solid var(--border)", borderRadius:12, overflow:"hidden", boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
-
-              {/* ── Desktop: table layout ── */}
-              {!isMobile && (
-                <div style={{ display:"grid", gridTemplateColumns:"160px 1fr 180px", padding:"10px 24px", background:"var(--elevated)", borderBottom:"1px solid var(--border)" }}>
-                  {["Round","Score","Result"].map((h, i) => (
-                    <div key={h} style={{ fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5, textAlign: i === 1 ? "center" : "left" }}>{h}</div>
-                  ))}
-                </div>
-              )}
-
-              {matches.map((m, i) => {
-                const isLive = m.status === "live";
-                const isDone = m.status === "done";
-                const p1win  = m.player_1?.is_winner;
-                const p2win  = m.player_2?.is_winner;
-                const winner = p1win ? m.player_1?.name : p2win ? m.player_2?.name : null;
-                const rowBg  = isLive ? "rgba(255,107,53,.04)" : i % 2 === 0 ? "var(--surface)" : "var(--bg)";
-                // Racket sport helpers (TT / Badminton per-set display)
-                const isRacketFix  = m.sport_key === "table_tennis" || m.sport_key === "badminton";
-                const fSets        = [...(m.sets || [])].sort((a, b) => a.set_number - b.set_number);
-                const fCompSets    = fSets.filter(s => s.is_complete);
-                const fCurSet      = fSets.find(s => !s.is_complete);
-                const fServer      = m.current_server;
-                const fDeuceAt     = m.sport_key === "badminton" ? 20 : 10;
-                const fCS1         = fCurSet?.score_p1 ?? 0;
-                const fCS2         = fCurSet?.score_p2 ?? 0;
-                const fInDeuce     = isRacketFix && isLive && fCS1 >= fDeuceAt && fCS2 >= fDeuceAt;
-                const fIsDeuce     = fInDeuce && fCS1 === fCS2;
-                const fAdvFor      = fInDeuce && Math.abs(fCS1 - fCS2) === 1 ? (fCS1 > fCS2 ? 1 : 2) : null;
-
-                /* ── Mobile: card layout ── */
-                if (isMobile) {
-                  return (
-                    <div key={m.match_id} onClick={() => onSelect?.(m)} style={{ padding:"14px 16px", borderBottom: i < matches.length - 1 ? "1px solid var(--border)" : "none", background: isLive ? "rgba(255,107,53,.04)" : "var(--surface)", cursor: onSelect ? "pointer" : "default" }}>
-                      {/* Round + status badge */}
-                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-                        <span style={{ fontFamily:"var(--font-display)", fontSize:7.5, fontWeight:800, color:"var(--primary)", letterSpacing:1.5, textTransform:"uppercase" }}>
-                          {getRoundLabel(m)}
-                        </span>
-                        {isLive ? (
-                          <span style={{ display:"inline-flex", alignItems:"center", gap:4, border:"1px solid rgba(255,107,53,.4)", color:"var(--primary)", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>
-                            <span className="live-dot" style={{ width:5, height:5, background:"var(--primary)", color:"var(--primary)" }}/>LIVE
-                          </span>
-                        ) : isDone ? (
-                          <span style={{ border:"1px solid rgba(22,163,74,.35)", color:"#16a34a", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>FT</span>
-                        ) : (
-                          <span style={{ border:"1px solid var(--border)", color:"var(--muted)", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>UPCOMING</span>
-                        )}
-                      </div>
-                      {/* Score row — racket sports show per-set breakdown */}
-                      {isRacketFix && (isDone || isLive) ? (
-                        <div>
-                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                            <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
-                              {isLive && fServer === 1 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
-                              <span style={{ fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_1?.name || "TBD"}</span>
-                            </div>
-                            <div style={{ display:"flex", gap:2, flexShrink:0 }}>
-                              {fCompSets.map(s => (
-                                <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
-                              ))}
-                              {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
-                            </div>
-                          </div>
-                          <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
-                            <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
-                              {isLive && fServer === 2 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
-                              <span style={{ fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_2?.name || "TBD"}</span>
-                            </div>
-                            <div style={{ display:"flex", gap:2, flexShrink:0 }}>
-                              {fCompSets.map(s => (
-                                <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
-                              ))}
-                              {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
-                            </div>
-                          </div>
-                          {isLive && (fIsDeuce || fAdvFor) && (
-                            <div style={{ fontSize:9, fontWeight:900, color:"var(--primary)", marginTop:3, textAlign:"right", letterSpacing:0.5 }}>
-                              {fIsDeuce ? "DEUCE" : `ADV ${fAdvFor === 1 ? (m.player_1?.name||"P1").split(" ")[0] : (m.player_2?.name||"P2").split(" ")[0]}`}
-                            </div>
-                          )}
-                          {winner && <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>{winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span></div>}
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                            <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textAlign:"right" }}>
-                              {m.player_1?.name || "TBD"}
-                            </span>
-                            <div style={{ background:"var(--elevated)", borderRadius:6, padding:"4px 14px", flexShrink:0 }}>
-                              {isDone || isLive ? (
-                                <span style={{ fontFamily:"var(--font-display)", fontSize:18, fontWeight:900, color: isLive ? "var(--primary)" : "var(--ink)", letterSpacing:-1 }}>
-                                  {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
-                                </span>
-                              ) : (
-                                <span style={{ fontFamily:"var(--font-display)", fontSize:14, fontWeight:900, color:"var(--muted)" }}>vs</span>
-                              )}
-                            </div>
-                            <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                              {m.player_2?.name || "TBD"}
-                            </span>
-                          </div>
-                          {winner && (
-                            <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>
-                              {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                }
-
-                /* ── Desktop: grid row ── */
-                return (
-                  <div
-                    key={m.match_id}
-                    onClick={() => onSelect?.(m)}
-                    style={{ display:"grid", gridTemplateColumns:"160px 1fr 180px", alignItems:"center", padding:"18px 24px", borderBottom: i < matches.length - 1 ? "1px solid var(--border)" : "none", background:rowBg, cursor: onSelect ? "pointer" : "default", transition:"background .15s" }}
-                    onMouseEnter={e => { if (onSelect) e.currentTarget.style.background = "var(--elevated)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}
-                  >
-                    {/* Round column */}
-                    <div>
-                      <span style={{ fontFamily:"var(--font-display)", fontSize:8, fontWeight:800, color:"var(--primary)", letterSpacing:1.5, display:"block", marginBottom:5, textTransform:"uppercase" }}>
-                        {getRoundLabel(m)}
-                      </span>
-                      {isLive ? (
-                        <span style={{ display:"inline-flex", alignItems:"center", gap:4, border:"1px solid rgba(255,107,53,.4)", color:"var(--primary)", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>
-                          <span className="live-dot" style={{ width:5, height:5, background:"var(--primary)", color:"var(--primary)" }}/>LIVE
-                        </span>
-                      ) : isDone ? (
-                        <span style={{ border:"1px solid rgba(22,163,74,.35)", color:"#16a34a", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>FT</span>
-                      ) : (
-                        <span style={{ border:"1px solid var(--border)", color:"var(--muted)", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>UPCOMING</span>
-                      )}
-                      {m.table_number && <div style={{ fontSize:9, color:"var(--muted)", marginTop:3 }}>Table {m.table_number}</div>}
-                    </div>
-
-                    {/* Score column — racket sports: per-set breakdown */}
-                    {isRacketFix && (isDone || isLive) ? (
-                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                        <div style={{ flex:1, display:"flex", flexDirection:"column", gap:3, minWidth:0 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                            {isLive && fServer === 1 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
-                            <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>{m.player_1?.name || "TBD"}</span>
-                          </div>
-                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                            {isLive && fServer === 2 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
-                            <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>{m.player_2?.name || "TBD"}</span>
-                          </div>
-                        </div>
-                        <div style={{ display:"flex", flexDirection:"column", gap:3, flexShrink:0 }}>
-                          <div style={{ display:"flex", gap:3 }}>
-                            {fCompSets.map(s => (
-                              <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
-                            ))}
-                            {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
-                          </div>
-                          <div style={{ display:"flex", gap:3 }}>
-                            {fCompSets.map(s => (
-                              <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
-                            ))}
-                            {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
-                          </div>
-                        </div>
-                        {isLive && (fIsDeuce || fAdvFor) && (
-                          <div style={{ flexShrink:0 }}>
-                            <span style={{ fontSize:9, fontWeight:900, color:"var(--primary)", letterSpacing:0.5 }}>
-                              {fIsDeuce ? "DEUCE" : `ADV`}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ display:"flex", alignItems:"center" }}>
-                        <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, textAlign:"right", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>
-                          {m.player_1?.name || "TBD"}
-                        </span>
-                        <div style={{ padding:"0 24px", textAlign:"center", minWidth:100, flexShrink:0 }}>
-                          {isDone || isLive ? (
-                            <span style={{ fontFamily:"var(--font-display)", fontSize:26, fontWeight:900, color:"var(--ink)", letterSpacing:-1 }}>
-                              {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
-                            </span>
-                          ) : (
-                            <span style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--muted)" }}>vs</span>
-                          )}
-                        </div>
-                        <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>
-                          {m.player_2?.name || "TBD"}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Result column */}
-                    <div>
-                      {winner ? (
-                        <span style={{ fontSize:12, color:"var(--muted)", fontWeight:500 }}>
-                          {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
-                        </span>
-                      ) : isLive ? (
-                        <span style={{ fontSize:11, color:"var(--primary)", fontWeight:700 }}>In progress</span>
-                      ) : (
-                        <span style={{ color:"var(--muted)", fontSize:12 }}>—</span>
-                      )}
-                    </div>
+            {hasGroupSplit ? (
+              <>
+                {groupNames.map(name => (
+                  <div key={name} style={{ marginBottom:24 }}>
+                    <div style={groupHeaderStyle}>{name}</div>
+                    {renderMatchList(matches.filter(m => m.group === name))}
                   </div>
-                );
-              })}
-            </div>
+                ))}
+                {champMatches.length > 0 && (
+                  <div style={{ marginBottom:24 }}>
+                    <div style={groupHeaderStyle}>Championship</div>
+                    {renderMatchList(champMatches)}
+                  </div>
+                )}
+              </>
+            ) : (
+              renderMatchList(matches)
+            )}
           </div>
         );
       })}
@@ -2732,8 +2876,59 @@ function FixturesSection({ events, onSelect }) {
 }
 
 // ── Leaderboard section (broadcast standings table) ───────────
-const TEAM_PALETTE = ["#2563eb","#dc2626","#7c3aed","#0891b2","#16a34a","#d97706","#db2777","#0d9488","#64748b","#ea580c"];
-const RANK_MEDAL   = ["#f59e0b","#94a3b8","#b45309","var(--muted)"];
+const RANK_MEDAL = ["#f59e0b","#94a3b8","#b45309","var(--muted)"];
+
+function StandingsTable({ rows, isMobile, advancesCount }) {
+  if (!rows.length) {
+    return <div style={{ textAlign:"center", padding:"60px 0", color:"var(--muted)", fontSize:14 }}>No matches played yet.</div>;
+  }
+  return (
+    <div style={{ border:"1px solid var(--border)", borderRadius:12, overflow: isMobile ? "visible" : "hidden", boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
+      {/* Scrollable wrapper on mobile */}
+      <div style={{ overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling:"touch" }}>
+      <div style={{ minWidth: isMobile ? 420 : "auto" }}>
+      {/* Headers */}
+      <div style={{ display:"grid", gridTemplateColumns:"36px 1fr 40px 40px 40px 40px 52px 60px", padding:"11px 16px", background:"var(--elevated)", borderBottom:"1px solid var(--border)" }}>
+        {["#","Name","P","W","D","L","GD","Pts"].map((h, j) => (
+          <div key={h} style={{ fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5, textAlign: j === 1 ? "left" : "center" }}>{h}</div>
+        ))}
+      </div>
+
+      {rows.map((row, i) => {
+        const gd       = (row.sf || 0) - (row.sa || 0);
+        const rc       = RANK_MEDAL[i] ?? RANK_MEDAL[3];
+        const advances = advancesCount != null && i < advancesCount;
+
+        return (
+          <div key={row.name} style={{ display:"grid", gridTemplateColumns:"36px 1fr 40px 40px 40px 40px 52px 60px", padding:"12px 16px", borderBottom: i < rows.length - 1 ? "1px solid var(--border)" : "none", alignItems:"center", background: advances ? "rgba(22,163,74,.02)" : "transparent" }}>
+            {/* Rank */}
+            <div style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 14 : 18, fontWeight:900, color:rc, textAlign:"center", lineHeight:1 }}>{i + 1}</div>
+
+            {/* Name — no avatar, just the name */}
+            <div style={{ fontSize: isMobile ? 12 : 13, fontWeight:700, color:"var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{row.name}</div>
+
+            {/* P W D L */}
+            {[row.p, row.w, row.d, row.l].map((v, j) => (
+              <div key={j} style={{ textAlign:"center", fontSize: isMobile ? 12 : 14, fontWeight:600, color:"var(--ink)" }}>{v}</div>
+            ))}
+
+            {/* GD */}
+            <div style={{ textAlign:"center", fontSize: isMobile ? 12 : 14, fontWeight:700, color: gd > 0 ? "#16a34a" : gd < 0 ? "#dc2626" : "var(--muted)" }}>
+              {gd > 0 ? "+" : ""}{gd}
+            </div>
+
+            {/* Pts */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:3 }}>
+              <span style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 15 : 20, fontWeight:900, color:"var(--ink)", lineHeight:1 }}>{row.pts}</span>
+            </div>
+          </div>
+        );
+      })}
+      </div>
+      </div>
+    </div>
+  );
+}
 
 function LeaderboardSection({ events }) {
   const w = useW();
@@ -2743,84 +2938,30 @@ function LeaderboardSection({ events }) {
 
   return (
     <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
-      {relevant.map((ev, evIdx) => {
-        const rows  = computeStandings(ev);
-        const isGK  = ev.format === "group_knockout";
+      {relevant.map((ev) => {
+        const groups = computeStandings(ev);
+        const isGK   = ev.format === "group_knockout";
+        const hasNamedGroups = groups.length > 1 || !!groups[0]?.group;
 
         return (
           <div key={ev.event_id} style={{ marginBottom: relevant.length > 1 ? 48 : 0 }}>
             <BroadcastSectionHeader title={relevant.length > 1 ? ev.name.toUpperCase() : "GROUP STANDINGS"} />
 
-            {rows.length === 0 ? (
-              <div style={{ textAlign:"center", padding:"60px 0", color:"var(--muted)", fontSize:14 }}>No matches played yet.</div>
-            ) : (
-              <>
-                <div style={{ border:"1px solid var(--border)", borderRadius:12, overflow: isMobile ? "visible" : "hidden", boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
-                  {/* Scrollable wrapper on mobile */}
-                  <div style={{ overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling:"touch" }}>
-                  <div style={{ minWidth: isMobile ? 480 : "auto" }}>
-                  {/* Headers */}
-                  <div style={{ display:"grid", gridTemplateColumns:"44px 1fr 44px 44px 44px 44px 56px 68px", padding:"11px 16px", background:"var(--elevated)", borderBottom:"1px solid var(--border)" }}>
-                    {["#","Club","P","W","D","L","GD","Pts"].map((h, j) => (
-                      <div key={h} style={{ fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5, textAlign: j === 1 ? "left" : "center" }}>{h}</div>
-                    ))}
+            {groups.map(({ group, rows }) => (
+              <div key={group || "all"} style={{ marginBottom: 24 }}>
+                {hasNamedGroups && (
+                  <div style={{ fontFamily:"var(--font-display)", fontSize:10, fontWeight:800, letterSpacing:1.5, color:"var(--primary)", textTransform:"uppercase", marginBottom:10 }}>
+                    {group || "Ungrouped"}
                   </div>
-
-                  {rows.map((row, i) => {
-                    const gd       = (row.sf || 0) - (row.sa || 0);
-                    const prog     = row.p > 0 ? row.w / row.p : 0;
-                    const rc       = RANK_MEDAL[i] ?? RANK_MEDAL[3];
-                    const tc       = TEAM_PALETTE[i % TEAM_PALETTE.length];
-                    const advances = isGK && i < 2;
-
-                    return (
-                      <div key={row.name} style={{ display:"grid", gridTemplateColumns:"44px 1fr 44px 44px 44px 44px 56px 68px", padding:"14px 16px", borderBottom: i < rows.length - 1 ? "1px solid var(--border)" : "none", alignItems:"center", background: advances ? "rgba(22,163,74,.02)" : "transparent" }}>
-                        {/* Rank */}
-                        <div style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 16 : 20, fontWeight:900, color:rc, textAlign:"center", lineHeight:1 }}>{i + 1}</div>
-
-                        {/* Club */}
-                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <div style={{ width: isMobile ? 28 : 34, height: isMobile ? 28 : 34, borderRadius:9, background:`${tc}18`, border:`1px solid ${tc}30`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                            <span style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 9 : 11, fontWeight:900, color:tc }}>{(row.name[0] || "?").toUpperCase()}</span>
-                          </div>
-                          <div>
-                            <div style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 10 : 11, fontWeight:800, color:"var(--ink)", marginBottom:4, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth: isMobile ? 100 : 180 }}>{row.name}</div>
-                            {!isMobile && (
-                              <div style={{ height:3, width:80, borderRadius:2, background:"var(--elevated)", overflow:"hidden" }}>
-                                <div style={{ height:"100%", width:`${Math.max(5, prog * 100)}%`, background:`linear-gradient(90deg,${tc},var(--primary))`, borderRadius:2 }}/>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* P W D L */}
-                        {[row.p, row.w, row.d, row.l].map((v, j) => (
-                          <div key={j} style={{ textAlign:"center", fontSize: isMobile ? 12 : 14, fontWeight:600, color:"var(--ink)" }}>{v}</div>
-                        ))}
-
-                        {/* GD */}
-                        <div style={{ textAlign:"center", fontSize: isMobile ? 12 : 14, fontWeight:700, color: gd > 0 ? "#16a34a" : gd < 0 ? "#dc2626" : "var(--muted)" }}>
-                          {gd > 0 ? "+" : ""}{gd}
-                        </div>
-
-                        {/* Pts */}
-                        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:3 }}>
-                          <span style={{ fontFamily:"var(--font-display)", fontSize: isMobile ? 16 : 22, fontWeight:900, color:"var(--ink)", lineHeight:1 }}>{row.pts}</span>
-                          {!isMobile && <span style={{ fontSize:9, color:"var(--muted)", fontWeight:600 }}>pts</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  </div>
-                  </div>
-                </div>
+                )}
+                <StandingsTable rows={rows} isMobile={isMobile} advancesCount={isGK ? 2 : null} />
                 {isGK && rows.length >= 2 && (
                   <p style={{ fontSize:11, color:"var(--muted)", marginTop:10, paddingLeft:2 }}>
                     <span style={{ color:"#16a34a", marginRight:4 }}>●</span>Top 2 advance to knockout round
                   </p>
                 )}
-              </>
-            )}
+              </div>
+            ))}
           </div>
         );
       })}
@@ -2830,6 +2971,29 @@ function LeaderboardSection({ events }) {
 
 
 // ── Teams section (broadcast grid cards) ─────────────────────
+// Groups participants by their `group` field (named groups sorted
+// alphabetically, ungrouped participants last), and sorts names
+// alphabetically within each group.
+function groupAndSortParticipants(ps) {
+  const buckets = new Map();
+  for (const p of ps) {
+    const key = p.group || "Ungrouped";
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(p);
+  }
+  const keys = [...buckets.keys()].sort((a, b) => {
+    if (a === "Ungrouped") return 1;
+    if (b === "Ungrouped") return -1;
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  });
+  return keys.map(key => ({
+    group: key,
+    participants: buckets.get(key).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    ),
+  }));
+}
+
 function TeamsSection({ events, isIndividual }) {
   const w = useW();
   const isMobile = w < 640;
@@ -2842,31 +3006,32 @@ function TeamsSection({ events, isIndividual }) {
     <div style={{ maxWidth:1240, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
       {eventsWithParticipants.map((ev) => {
         const ps = ev.participants || [];
+        const groups = groupAndSortParticipants(ps);
+        const hasRealGroups = groups.length > 1 || groups[0]?.group !== "Ungrouped";
         return (
           <div key={ev.event_id} style={{ marginBottom: multiEvent ? 48 : 0 }}>
             <BroadcastSectionHeader title={multiEvent ? ev.name.toUpperCase() : sectionTitle} count={ps.length} />
-            <div style={{ display:"grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(180px, 1fr))", gap: isMobile ? 10 : 12 }}>
-              {ps.map((p, i) => {
-                const color = TEAM_PALETTE[i % TEAM_PALETTE.length];
-                // First letter for avatar
-                const initial = (p.name[0] || "T").toUpperCase();
-                return (
-                  <div key={p.id} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderTop:`4px solid ${color}`, borderRadius:"0 0 14px 14px", padding:"28px 20px", textAlign:"center", boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
-                    {p.logo_url ? (
-                      <div style={{ width:72, height:72, borderRadius:18, overflow:"hidden", margin:"0 auto 16px", border:`2px solid ${color}30` }}>
-                        <img src={p.logo_url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"contain" }}/>
-                      </div>
-                    ) : (
-                      <div style={{ width:72, height:72, borderRadius:18, background:`${color}18`, border:`2px solid ${color}28`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
-                        <span style={{ fontFamily:"var(--font-display)", fontSize:24, fontWeight:900, color }}>{initial}</span>
-                      </div>
-                    )}
-                    <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)", lineHeight:1.4 }}>{p.name}</div>
-                    {p.group && <div style={{ fontSize:10, color:"var(--muted)", marginTop:4 }}>{p.group}</div>}
+            {groups.map(({ group, participants }) => (
+              <div key={group} style={{ marginBottom: 24 }}>
+                {hasRealGroups && (
+                  <div style={{ fontFamily:"var(--font-display)", fontSize:10, fontWeight:800, letterSpacing:1.5, color:"var(--primary)", textTransform:"uppercase", marginBottom:10 }}>
+                    {group}
                   </div>
-                );
-              })}
-            </div>
+                )}
+                <div style={{ display:"grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(160px, 1fr))", gap: isMobile ? 8 : 10 }}>
+                  {participants.map((p) => (
+                    <div key={p.id} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, padding:"14px 16px", display:"flex", alignItems:"center", gap:10, boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
+                      {p.logo_url && (
+                        <div style={{ width:32, height:32, borderRadius:8, overflow:"hidden", flexShrink:0, border:"1px solid var(--border)" }}>
+                          <img src={p.logo_url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"contain" }}/>
+                        </div>
+                      )}
+                      <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)", lineHeight:1.4, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         );
       })}
@@ -2890,7 +3055,7 @@ function BracketSection({ events }) {
       </div>
       {/* Bracket: padded so cards don't touch screen edges, but unconstrained in width */}
       <div style={{ paddingLeft: hPad, paddingRight: hPad }}>
-        <RoadToFinal events={events} />
+        <RoadToFinal events={events} isMobile={isMobile} />
       </div>
     </div>
   );
@@ -3061,7 +3226,6 @@ export default function TournamentPublic() {
   const hasInfo = true;
 
   const primarySportKey = events[0]?.sport_key;
-  const titleSponsor    = t.sponsors?.find(s => s.tier === "title") ?? null;
 
   // Individual sports (badminton / table tennis single play) → label tabs "Players"
   const isIndividualSport = (primarySportKey === "badminton" || primarySportKey === "table_tennis") &&
@@ -3071,29 +3235,31 @@ export default function TournamentPublic() {
   if (status === "draft") return (
     <div className="app">
       <TickerBar allMatches={[]} />
-      <SectionNav sections={[{ id:"fixtures", label:"Fixtures" }]} activeId="fixtures" onNav={() => {}} darkMode={darkMode} onToggleDark={toggleDark} slug={slug} tournament={t} />
+      <TopBar darkMode={darkMode} onToggleDark={toggleDark} />
       <HeroBand tournament={t} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} onRegister={null} events={events} slug={slug} />
       <DraftView tournament={t} />
     </div>
   );
 
-  // Build section list — order: Fixtures | Teams | Leaderboard | Info | Road to Final
+  // Build section list — order: Info | Matches | Knockout | Table | Players
   const sections = [
-    { id:"fixtures",    label:"Fixtures",      count: allMatches.length },
-    ...(hasTeams   ? [{ id:"teams",       label: teamsLabel,     count: teamCount }] : []),
-    ...(hasBoard   ? [{ id:"leaderboard", label:"Leaderboard"                     }] : []),
     ...(hasInfo    ? [{ id:"info",        label:"Info"                             }] : []),
-    ...(hasBracket ? [{ id:"bracket",    label:"Road to Final"                    }] : []),
+    { id:"fixtures",    label:"Matches",      count: allMatches.length },
+    ...(hasBracket ? [{ id:"bracket",    label:"Knockout"                        }] : []),
+    ...(hasBoard   ? [{ id:"leaderboard", label:"Table"                           }] : []),
+    ...(hasTeams   ? [{ id:"teams",       label: teamsLabel,     count: teamCount }] : []),
   ];
 
-  const effectiveActive = activeId || sections[0]?.id;
+  // Default landing tab is Matches (live scores), even though Info leads the
+  // tab bar order — spectators want to see the action first.
+  const effectiveActive = activeId || "fixtures";
 
   return (
-    <div className="app" style={{ paddingBottom: titleSponsor ? 68 : 0 }}>
+    <div className="app">
 
       {/* ── Scrolling scores ticker — only in fixtures/live status, no TBD matches ── */}
       <TickerBar allMatches={
-        (status === "fixtures" || status === "live")
+        status === "live"
           ? allMatches.filter(m =>
               m.player_1?.name && m.player_1.name !== "TBD" &&
               m.player_2?.name && m.player_2.name !== "TBD"
@@ -3101,18 +3267,10 @@ export default function TournamentPublic() {
           : []
       } />
 
-      {/* ── Sticky broadcast nav (logo + tabs + utilities) ── */}
-      <SectionNav
-        sections={sections}
-        activeId={effectiveActive}
-        onNav={switchTab}
-        darkMode={darkMode}
-        onToggleDark={toggleDark}
-        slug={slug}
-        tournament={t}
-      />
+      {/* ── Top bar (brand + theme toggle only) ── */}
+      <TopBar darkMode={darkMode} onToggleDark={toggleDark} />
 
-      {/* ── Hero band ── */}
+      {/* ── Hero band (tournament identity) ── */}
       <HeroBand
         tournament={t}
         totalPlayers={totalPlayers}
@@ -3123,6 +3281,9 @@ export default function TournamentPublic() {
         events={events}
         slug={slug}
       />
+
+      {/* ── Tab bar — below the hero, sticky under the top bar ── */}
+      <TabBar sections={sections} activeId={effectiveActive} onNav={switchTab} />
 
       {/* ── Tab content ── */}
       <div style={{ minHeight:"50vh" }}>
@@ -3144,18 +3305,7 @@ export default function TournamentPublic() {
 
       {/* ── Footer ── */}
       <footer style={{ borderTop:"2px solid var(--ink)", padding:"20px 16px", marginTop:40 }}>
-        <div style={{ maxWidth:1240, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-          {titleSponsor ? (
-            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-              <div style={{ width:28, height:28, borderRadius:6, background:"rgba(245,158,11,.1)", border:"1px solid rgba(245,158,11,.25)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                <span style={{ fontSize:12, fontWeight:900, color:"#d97706" }}>{titleSponsor.name[0]}</span>
-              </div>
-              <div>
-                <div style={{ fontFamily:"var(--font-display)", fontSize:7, color:"var(--muted)", letterSpacing:2, marginBottom:1 }}>TITLE SPONSOR</div>
-                <div style={{ fontSize:12, fontWeight:600, color:"var(--ink)" }}>{titleSponsor.name}</div>
-              </div>
-            </div>
-          ) : <div/>}
+        <div style={{ maxWidth:1240, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center" }}>
           <span style={{ fontFamily:"var(--font-display)", fontSize:8, color:"var(--muted)", letterSpacing:2 }}>
             POWERED BY <span style={{ color:"var(--primary)" }}>THE</span>SCORE<span style={{ color:"var(--primary)" }}>BOARD</span>
           </span>
@@ -3163,7 +3313,6 @@ export default function TournamentPublic() {
       </footer>
 
       {selectedMatch && <MatchDetailModal match={selectedMatch} onClose={() => setSelectedMatch(null)} />}
-      {t.sponsors?.length > 0 && status !== "draft" && <SponsorStickyBar sponsors={t.sponsors} />}
     </div>
   );
 }

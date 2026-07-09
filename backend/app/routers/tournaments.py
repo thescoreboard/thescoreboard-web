@@ -14,7 +14,7 @@ from app.models.event import Event
 from app.models.match import Match, MatchParticipant, MatchSet
 from app.models.group import Group, EventParticipant
 from app.schemas.tournament import TournamentCreate, TournamentUpdate, TournamentOut, SponsorCreate, SponsorUpdate, SponsorOut
-from app.utils.auth import get_current_user, require_pro
+from app.utils.auth import get_current_user
 from app.utils.slug import generate_unique_slug
 from app.sports.registry import get_sport_engine
 from app.sports.bracket import build_bracket, assign_players_to_groups, order_group_qualifiers
@@ -349,7 +349,10 @@ def get_workspace(
             "venue_lng":      t.venue_lng,
             "start_date":     str(t.start_date) if t.start_date else None,
             "end_date":       str(t.end_date)   if t.end_date   else None,
+            "registration_start_date": str(t.registration_start_date) if t.registration_start_date else None,
+            "registration_end_date":   str(t.registration_end_date)   if t.registration_end_date   else None,
             "status":         t.status,
+            "registration_open": t.registration_open,
             "primary_color":  t.primary_color,
             "is_published":     t.is_published,
             "tournament_info":  t.tournament_info,
@@ -460,7 +463,7 @@ def create_sponsor(
     tournament_id: int,
     data: SponsorCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_pro),   # Pro plan required
+    user: User = Depends(get_current_user),
 ):
     t = _check_tournament_access(tournament_id, user, db)
     sponsor = Sponsor(
@@ -470,6 +473,7 @@ def create_sponsor(
         logo_url      = data.logo_url,
         website       = data.website,
         contact_phone = data.contact_phone,
+        contact_email = data.contact_email,
         description   = data.description,
     )
     db.add(sponsor)
@@ -484,7 +488,7 @@ def update_sponsor(
     sponsor_id: int,
     data: SponsorUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_pro),   # Pro plan required
+    user: User = Depends(get_current_user),
 ):
     _check_tournament_access(tournament_id, user, db)
     s = db.query(Sponsor).filter(
@@ -505,7 +509,7 @@ def delete_sponsor(
     tournament_id: int,
     sponsor_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_pro),   # Pro plan required
+    user: User = Depends(get_current_user),
 ):
     _check_tournament_access(tournament_id, user, db)
     s = db.query(Sponsor).filter(
@@ -534,12 +538,12 @@ def transition_status(
     if target_status not in TOURNAMENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status: {target_status}")
 
+    # Just 3 states. Registration availability is a separate, date-driven
+    # concern (Tournament.registration_open) — NOT part of this lifecycle.
     _ALLOWED_TRANSITIONS = {
-        "draft":        {"registration", "upcoming", "live"},
-        "registration": {"upcoming", "live", "draft"},
-        "upcoming":     {"live", "registration"},
-        "live":         {"done"},
-        "done":         set(),
+        "draft":     {"live"},
+        "live":      {"completed", "draft"},   # draft = unpublish, e.g. published too early by mistake
+        "completed": {"live"},                  # reopen, e.g. marked done by mistake
     }
     allowed = _ALLOWED_TRANSITIONS.get(t.status, set())
     if target_status not in allowed:

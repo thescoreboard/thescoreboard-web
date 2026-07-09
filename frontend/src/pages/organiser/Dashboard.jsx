@@ -8,11 +8,9 @@ import OrgHeader from "../../components/shared/OrgHeader";
 import CitySelect, { CITY_STATE_MAP } from "../../components/shared/CitySelect";
 
 const STATUS_META = {
-  draft:        { label: "Draft",        pill: "pill-gray"   },
-  registration: { label: "Registration", pill: "pill-gold"   },
-  fixtures:     { label: "Fixtures",     pill: "pill-orange" },
-  live:         { label: "Live",         pill: "pill-red"    },
-  completed:    { label: "Completed",    pill: "pill-green"  },
+  draft:     { label: "Draft",     pill: "pill-gray"  },
+  live:      { label: "Live",      pill: "pill-red"   },
+  completed: { label: "Completed", pill: "pill-green" },
 };
 
 const SPORT_EMOJI  = { table_tennis:"🏓", badminton:"🏸", cricket:"🏏", football:"⚽" };
@@ -285,10 +283,10 @@ export default function Dashboard() {
           {tournaments.length > 0 && (
             <div style={{ display:"grid", gap:10, marginBottom:24 }} className="dashboard-stats">
               {[
-                { num: tournaments.length,                                       label:"Total",       color:"var(--ink)"    },
-                { num: liveCount,                                                 label:"Live Now",    color:"var(--primary)" },
-                { num: tournaments.filter(t=>t.status==="registration").length,  label:"Registration",color:"#92700A"       },
-                { num: tournaments.filter(t=>t.status==="completed").length,     label:"Completed",   color:"var(--green)"  },
+                { num: tournaments.length,                                       label:"Total",              color:"var(--ink)"    },
+                { num: liveCount,                                                 label:"Live Now",           color:"var(--primary)" },
+                { num: tournaments.filter(t=>t.registration_open).length,        label:"Registration Open",  color:"#92700A"       },
+                { num: tournaments.filter(t=>t.status==="completed").length,     label:"Completed",          color:"var(--green)"  },
               ].map(s => (
                 <div key={s.label} style={{
                   background:"var(--surface)", border:"2px solid var(--border)",
@@ -305,7 +303,7 @@ export default function Dashboard() {
           {tournaments.length > 0 && (
             <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16 }}>
               {/* Status chips */}
-              {["all","live","registration","fixtures","draft","completed"].map(s => {
+              {["all","live","draft","completed"].map(s => {
                 const label = s === "all" ? "All" : (STATUS_META[s]?.label || s);
                 const active = filterStatus === s;
                 return (

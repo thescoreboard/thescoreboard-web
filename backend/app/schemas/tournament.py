@@ -65,6 +65,7 @@ class SponsorCreate(BaseModel):
     logo_url:      Optional[str] = None
     website:       Optional[str] = None
     contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
     description:   Optional[str] = None
 
 
@@ -74,6 +75,7 @@ class SponsorUpdate(BaseModel):
     logo_url:      Optional[str] = None
     website:       Optional[str] = None
     contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
     description:   Optional[str] = None
 
 
@@ -84,6 +86,7 @@ class SponsorOut(BaseModel):
     tier:          str
     website:       Optional[str]
     contact_phone: Optional[str]
+    contact_email: Optional[str] = None
     description:   Optional[str]
 
     class Config:
@@ -113,6 +116,7 @@ class TournamentOut(BaseModel):
     status: str
     is_active: bool
     is_published: bool
+    registration_open: bool = False
     tournament_info: Optional[dict] = None
     created_at: datetime
     sponsors: List[SponsorOut] = []

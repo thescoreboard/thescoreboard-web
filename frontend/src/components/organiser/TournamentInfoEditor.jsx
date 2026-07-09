@@ -16,9 +16,11 @@ import DatePicker from "../shared/DatePicker";
 const STANDARD_POSITIONS = ["1st Place", "2nd Place", "3rd Place"];
 const CUSTOM_SENTINEL     = "__custom__";
 
-// Returns true if a position value is NOT one of the standard ones
+// Returns true if a position value is NOT one of the standard ones.
+// Blank ("") counts as custom too — that's the value right after picking
+// "Custom…", before the organiser has typed anything into the text input.
 function isCustomPosition(val) {
-  return val !== "" && !STANDARD_POSITIONS.includes(val);
+  return !STANDARD_POSITIONS.includes(val);
 }
 
 const empty = () => ({

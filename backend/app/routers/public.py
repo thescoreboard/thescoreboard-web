@@ -128,6 +128,8 @@ def _serialize_match(m: Match) -> dict:
     return {
         "match_id":       m.match_id,
         "event_id":       m.event_id,
+        "group_id":       m.group_id,
+        "group":          m.group.name if m.group else None,
         "stage":          m.stage,
         "round":          m.round,
         "status":         m.status,
@@ -536,6 +538,7 @@ def _build_tournament_page_data(slug: str, db: Session) -> dict:
             joinedload(Match.participants).joinedload(MatchParticipant.player),
             joinedload(Match.participants).joinedload(MatchParticipant.team),
             joinedload(Match.sets),
+            joinedload(Match.group),
         )
         .order_by(Match.stage, Match.round, Match.match_id)
         .all()
@@ -617,6 +620,7 @@ def _build_tournament_page_data(slug: str, db: Session) -> dict:
             "slug":            tournament.slug,
             "description":     tournament.description,
             "status":          tournament.status,
+            "registration_open": tournament.registration_open,
             "start_date":      str(tournament.start_date) if tournament.start_date else None,
             "end_date":        str(tournament.end_date)   if tournament.end_date   else None,
             "poster_url":      tournament.poster_url or getattr(tournament, "banner_url", None),
@@ -695,6 +699,7 @@ def get_tournament_by_sport(
             joinedload(Match.participants).joinedload(MatchParticipant.player),
             joinedload(Match.participants).joinedload(MatchParticipant.team),
             joinedload(Match.sets),
+            joinedload(Match.group),
         )
         .order_by(Match.stage, Match.round, Match.match_id)
         .all()
@@ -769,6 +774,7 @@ def get_tournament_by_sport(
             "slug":          tournament.slug,
             "description":   tournament.description,
             "status":        tournament.status,
+            "registration_open": tournament.registration_open,
             "start_date":    str(tournament.start_date) if tournament.start_date else None,
             "poster_url":    tournament.poster_url,
             "primary_color": tournament.primary_color,
@@ -839,7 +845,7 @@ def public_register(
     ).first()
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
-    if tournament.status != "registration":
+    if not tournament.registration_open:
         raise HTTPException(
             status_code=400,
             detail="This tournament is not currently accepting registrations",

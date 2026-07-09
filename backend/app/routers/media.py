@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from typing import Optional
 
 from app.models.user import User
-from app.utils.auth import get_current_user, require_pro
+from app.utils.auth import get_current_user
 from app.services import storage
 
 router = APIRouter()
@@ -22,12 +22,20 @@ async def upload_media(
     file: UploadFile = File(...),
     bucket: str = Form(...),
     path: Optional[str] = Form(None),
-    current_user: User = Depends(require_pro),   # Pro plan required
+    current_user: User = Depends(get_current_user),
 ):
     """
     Upload an image file to Supabase Storage.
     Returns { public_url: str }
+
+    Sponsor logos (path starts with "sponsors/") are free-plan — sponsor
+    management itself isn't Pro-gated, so a sponsor's logo shouldn't be
+    either. Tournament branding (posters/logos/team banners) stays Pro-only.
     """
+    is_sponsor_logo = bool(path) and path.startswith("sponsors/")
+    if not is_sponsor_logo and current_user.plan != "pro":
+        raise HTTPException(status_code=403, detail="pro_required")
+
     if bucket not in storage.VALID_BUCKETS:
         raise HTTPException(status_code=422, detail=f"Unknown bucket '{bucket}'")
 

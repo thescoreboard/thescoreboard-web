@@ -7,6 +7,7 @@ import {
   createGroup, generateFixtures, createMatch, generateGroupMatches,
   updateMatchStatus, updateScore, undoSet, rematchMatch, deleteMatch, walkoverMatch,
   getMe, clearToken, configureEvent, updateTournament, updateEvent,
+  transitionTournament,
 } from "../../../api/client";
 import PageLoader from "../../../components/shared/PageLoader";
 import TTScorer        from "../../../components/scoring/TTScorer";
@@ -18,6 +19,7 @@ import { IndividualTab, DoublesTab, TeamTab } from "../../../components/shared/P
 import TournamentInfoEditor from "../../../components/organiser/TournamentInfoEditor";
 import SponsorsSection      from "../../../components/organiser/SponsorsSection";
 import { MediaUpload }      from "../../../components/shared/MediaUpload";
+import VenuePicker          from "../../../components/shared/VenuePicker";
 
 const SPORT_META = {
   table_tennis: { abbrev: "🏓", label: "Table Tennis" },
@@ -183,6 +185,32 @@ export default function EventWorkspace() {
     try {
       await updateParticipantSeed(currentEvent.event_id, playerId, seedLevel);
       loadData();
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  // ── Tournament lifecycle (draft/live/completed) ───────────
+  const handleTournamentTransition = async (targetStatus) => {
+    try {
+      await transitionTournament(t.tournament_id, targetStatus);
+      loadData();
+      flash(
+        targetStatus === "live"      ? "Tournament published — it's now live!" :
+        targetStatus === "completed" ? "Tournament marked completed." :
+        "Tournament moved back to draft."
+      );
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  // "End Registration Now" — reuses the existing registration_end_date field
+  // instead of a separate manual-close flag: setting it to yesterday closes
+  // registration immediately, and the organiser can just edit the date again
+  // later if they want to reopen it.
+  const handleEndRegistrationNow = async () => {
+    try {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      await updateTournament(t.org_id, t.tournament_id, { registration_end_date: yesterday });
+      loadData();
+      flash("Registration closed.");
     } catch (e) { flash("Error: " + e.message); }
   };
 
@@ -478,12 +506,32 @@ export default function EventWorkspace() {
               venue:                   t.venue || "",
               city:                    t.city || "",
               state:                   t.state || "",
+              venue_lat:               t.venue_lat ?? null,
+              venue_lng:               t.venue_lng ?? null,
               start_date:              t.start_date || "",
               end_date:                t.end_date || "",
               registration_start_date: t.registration_start_date || "",
               registration_end_date:   t.registration_end_date || "",
             });
             setEditingTournament(true);
+          };
+
+          // VenuePicker gives back { name, city, state, lat, lng } | null.
+          // City/State stay separately editable below it since manual-entry
+          // mode (or a venue re-typed by hand) won't always populate them.
+          const handleVenuePick = (v) => {
+            if (!v) {
+              setTForm(f => ({ ...f, venue: "", venue_lat: null, venue_lng: null }));
+              return;
+            }
+            setTForm(f => ({
+              ...f,
+              venue: v.name || "",
+              city:  v.city  || f.city,
+              state: v.state || f.state,
+              venue_lat: v.lat ?? null,
+              venue_lng: v.lng ?? null,
+            }));
           };
 
           const saveTournament = async () => {
@@ -573,6 +621,163 @@ export default function EventWorkspace() {
                 )}
               </div>
 
+              {/* ── Tournament Status ── */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)" }}>
+                    Tournament Status
+                  </div>
+                  <span className={`pill ${t.status === "live" ? "pill-orange" : t.status === "completed" ? "pill-green" : "pill-gray"}`}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {t.status === "live" && <span className="live-dot" style={{ width: 6, height: 6 }} />}
+                    {t.status?.charAt(0).toUpperCase() + t.status?.slice(1)}
+                  </span>
+                </div>
+
+                {t.status === "draft" && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 420 }}>
+                      This tournament is only visible to you. Publish it to make it public and open registration.
+                    </div>
+                    <button className="btn btn-primary" onClick={() => handleTournamentTransition("live")}>
+                      Publish Tournament →
+                    </button>
+                  </div>
+                )}
+
+                {t.status === "live" && (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                      <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                        {t.registration_open
+                          ? (t.registration_end_date
+                              ? `Registration is open until ${t.registration_end_date}.`
+                              : "Registration is open — no closing date set yet.")
+                          : "Registration is currently closed."}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {t.registration_open && (
+                          <button className="btn btn-outline btn-sm" onClick={handleEndRegistrationNow}>
+                            End Registration Now
+                          </button>
+                        )}
+                        <button className="btn btn-outline btn-sm" onClick={() => handleTournamentTransition("completed")}>
+                          Mark Tournament Completed
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {t.status === "completed" && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                      This tournament is marked completed and shown as finished to spectators.
+                    </div>
+                    <button className="btn btn-outline btn-sm" onClick={() => handleTournamentTransition("live")}>
+                      Reopen Tournament
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Tournament Details ── */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)" }}>
+                    Tournament Details
+                  </div>
+                  {!editingTournament && (
+                    <button className="btn btn-outline btn-sm" onClick={startEditTournament}>Edit</button>
+                  )}
+                </div>
+
+                {!editingTournament ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px 24px" }}>
+                    {[
+                      { label: "Tournament Name", value: t.name },
+                      {
+                        label: "Venue",
+                        value: (
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            {t.venue || "—"}
+                            {t.venue && t.venue_lat && t.venue_lng && (
+                              <a
+                                href={`https://www.google.com/maps?q=${t.venue_lat},${t.venue_lng}`}
+                                target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: 10, fontWeight: 700, color: "var(--primary)", textDecoration: "none" }}
+                              >
+                                Map ↗
+                              </a>
+                            )}
+                          </span>
+                        ),
+                      },
+                      { label: "City",            value: t.city  || "—" },
+                      { label: "State",           value: t.state || "—" },
+                      { label: "Start Date",      value: fmtDate(t.start_date) },
+                      { label: "End Date",        value: fmtDate(t.end_date) },
+                      { label: "Reg. Opens",      value: fmtDate(t.registration_start_date) },
+                      { label: "Reg. Closes",     value: fmtDate(t.registration_end_date) },
+                    ].map(({ label, value }) => (
+                      <div key={label}>
+                        <div style={labelStyle}>{label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div style={fieldStyle}>
+                      <label style={labelStyle}>Tournament Name</label>
+                      <input style={inputStyle} value={tForm.name} onChange={e => setTForm(f => ({ ...f, name: e.target.value }))} />
+                    </div>
+
+                    {/* Venue — searchable picker with a map pin, so the location
+                        can be corrected later, not just set once at creation */}
+                    <div style={fieldStyle}>
+                      <label style={labelStyle}>Venue</label>
+                      <VenuePicker
+                        value={tForm.venue ? { name: tForm.venue, city: tForm.city, state: tForm.state, lat: tForm.venue_lat, lng: tForm.venue_lng } : null}
+                        onChange={handleVenuePick}
+                        placeholder="Search venue, stadium, ground…"
+                      />
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 20px" }}>
+                      <div style={fieldStyle}>
+                        <label style={labelStyle}>City</label>
+                        <input style={inputStyle} value={tForm.city} onChange={e => setTForm(f => ({ ...f, city: e.target.value }))} placeholder="e.g. Mumbai" />
+                      </div>
+                      <div style={fieldStyle}>
+                        <label style={labelStyle}>State</label>
+                        <input style={inputStyle} value={tForm.state} onChange={e => setTForm(f => ({ ...f, state: e.target.value }))} placeholder="e.g. Maharashtra" />
+                      </div>
+                      <div style={fieldStyle}>
+                        <label style={labelStyle}>Tournament Start Date</label>
+                        <input style={inputStyle} type="date" value={tForm.start_date} onChange={e => setTForm(f => ({ ...f, start_date: e.target.value }))} />
+                      </div>
+                      <div style={fieldStyle}>
+                        <label style={labelStyle}>Tournament End Date</label>
+                        <input style={inputStyle} type="date" value={tForm.end_date} onChange={e => setTForm(f => ({ ...f, end_date: e.target.value }))} />
+                      </div>
+                      <div style={fieldStyle}>
+                        <label style={labelStyle}>Registration Opens</label>
+                        <input style={inputStyle} type="date" value={tForm.registration_start_date} onChange={e => setTForm(f => ({ ...f, registration_start_date: e.target.value }))} />
+                      </div>
+                      <div style={fieldStyle}>
+                        <label style={labelStyle}>Registration Closes</label>
+                        <input style={inputStyle} type="date" value={tForm.registration_end_date} onChange={e => setTForm(f => ({ ...f, registration_end_date: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                      <button className="btn btn-primary btn-sm" onClick={saveTournament}>Save Changes</button>
+                      <button className="btn btn-outline btn-sm" onClick={() => setEditingTournament(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* ── Share Tournament ── */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)", marginBottom: 12 }}>
@@ -616,51 +821,27 @@ export default function EventWorkspace() {
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)", marginBottom: 12 }}>
                   Branding
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Banner</div>
-                    <MediaUpload
-                      label=""
-                      hint="JPEG / PNG / WebP · Recommended 1200×400px"
-                      bucket="logos"
-                      resourceType="tournaments"
-                      resourceId={t.tournament_id}
-                      filename="banner"
-                      enforceAspect="3:1"
-                      maxWidth={1200}
-                      previewUrl={t.banner_url}
-                      previewStyle={{ width: "100%", aspectRatio: "3/1", objectFit: "cover", borderRadius: 6 }}
-                      onUploaded={async (url) => {
-                        try {
-                          await updateTournament(t.tournament_id, { banner_url: url });
-                          loadData();
-                          flash("Banner updated!");
-                        } catch (e) { flash("Error: " + e.message); }
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Logo</div>
-                    <MediaUpload
-                      label=""
-                      hint="JPEG / PNG / WebP · Recommended 400×400px"
-                      bucket="logos"
-                      resourceType="tournaments"
-                      resourceId={t.tournament_id}
-                      filename="logo"
-                      enforceAspect="1:1"
-                      maxWidth={400}
-                      previewUrl={t.logo_url}
-                      previewStyle={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", borderRadius: 6 }}
-                      onUploaded={async (url) => {
-                        try {
-                          await updateTournament(t.tournament_id, { logo_url: url });
-                          loadData();
-                          flash("Logo updated!");
-                        } catch (e) { flash("Error: " + e.message); }
-                      }}
-                    />
-                  </div>
+                <div style={{ maxWidth: 240 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Logo</div>
+                  <MediaUpload
+                    label=""
+                    hint="JPEG / PNG / WebP · Recommended 400×400px"
+                    bucket="logos"
+                    resourceType="tournaments"
+                    resourceId={t.tournament_id}
+                    filename="logo"
+                    enforceAspect="1:1"
+                    maxWidth={400}
+                    previewUrl={t.logo_url}
+                    previewStyle={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", borderRadius: 6 }}
+                    onUploaded={async (url) => {
+                      try {
+                        await updateTournament(t.org_id, t.tournament_id, { logo_url: url });
+                        loadData();
+                        flash("Logo updated!");
+                      } catch (e) { flash("Error: " + e.message); }
+                    }}
+                  />
                 </div>
               </div>
 
@@ -682,80 +863,6 @@ export default function EventWorkspace() {
                 flash={flash}
                 onSaved={loadData}
               />
-
-              {/* ── Tournament Details ── */}
-              <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)" }}>
-                    Tournament Details
-                  </div>
-                  {!editingTournament && (
-                    <button className="btn btn-outline btn-sm" onClick={startEditTournament}>Edit</button>
-                  )}
-                </div>
-
-                {!editingTournament ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px 24px" }}>
-                    {[
-                      { label: "Tournament Name", value: t.name },
-                      { label: "Venue",           value: t.venue || "—" },
-                      { label: "City",            value: t.city  || "—" },
-                      { label: "State",           value: t.state || "—" },
-                      { label: "Start Date",      value: fmtDate(t.start_date) },
-                      { label: "End Date",        value: fmtDate(t.end_date) },
-                      { label: "Reg. Opens",      value: fmtDate(t.registration_start_date) },
-                      { label: "Reg. Closes",     value: fmtDate(t.registration_end_date) },
-                      { label: "Status",          value: t.status?.charAt(0).toUpperCase() + t.status?.slice(1) },
-                    ].map(({ label, value }) => (
-                      <div key={label}>
-                        <div style={labelStyle}>{label}</div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{value}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 20px" }}>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Tournament Name</label>
-                        <input style={inputStyle} value={tForm.name} onChange={e => setTForm(f => ({ ...f, name: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Venue</label>
-                        <input style={inputStyle} value={tForm.venue} onChange={e => setTForm(f => ({ ...f, venue: e.target.value }))} placeholder="e.g. Sports Complex" />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>City</label>
-                        <input style={inputStyle} value={tForm.city} onChange={e => setTForm(f => ({ ...f, city: e.target.value }))} placeholder="e.g. Mumbai" />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>State</label>
-                        <input style={inputStyle} value={tForm.state} onChange={e => setTForm(f => ({ ...f, state: e.target.value }))} placeholder="e.g. Maharashtra" />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Tournament Start Date</label>
-                        <input style={inputStyle} type="date" value={tForm.start_date} onChange={e => setTForm(f => ({ ...f, start_date: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Tournament End Date</label>
-                        <input style={inputStyle} type="date" value={tForm.end_date} onChange={e => setTForm(f => ({ ...f, end_date: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Registration Opens</label>
-                        <input style={inputStyle} type="date" value={tForm.registration_start_date} onChange={e => setTForm(f => ({ ...f, registration_start_date: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Registration Closes</label>
-                        <input style={inputStyle} type="date" value={tForm.registration_end_date} onChange={e => setTForm(f => ({ ...f, registration_end_date: e.target.value }))} />
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                      <button className="btn btn-primary btn-sm" onClick={saveTournament}>Save Changes</button>
-                      <button className="btn btn-outline btn-sm" onClick={() => setEditingTournament(false)}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-              </div>
 
               {/* ── Event / Match Settings ── */}
               <div className="card" style={{ marginBottom: 16 }}>
@@ -912,11 +1019,17 @@ export default function EventWorkspace() {
         )}
 
         {/* ══ FIXTURES ══════════════════════════════════════════ */}
-        {tab === "fixtures" && (
+        {tab === "fixtures" && (() => {
+          // Once a tournament is marked completed, its bracket is final —
+          // hide every action that would mutate it (add/regenerate matches).
+          // Read-only views (scores, standings) stay visible.
+          const isCompleted = t.status === "completed";
+          return (
           <div>
             {currentEvent.format === "group_knockout" ? (
               <GroupKnockoutFixtures
                 event={currentEvent}
+                isCompleted={isCompleted}
                 numGroups={numGroups}
                 setNumGroups={setNumGroups}
                 qualifiersPerGroup={qualifiersPerGroup}
@@ -971,42 +1084,46 @@ export default function EventWorkspace() {
                 // ── Matches exist → control bar + add manually + bracket ──
                 return (
                   <>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontFamily: "var(--font-display)", fontSize: 13, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
-                        {currentEvent.match_count} {isDoubles ? "pair " : isTeam ? "team " : ""}matches
-                      </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        {currentEvent.format === "direct_knockout" && (
-                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
-                            <input type="checkbox" checked={thirdPlace} onChange={e => setThirdPlace(e.target.checked)} style={{ cursor: "pointer" }} />
-                            3rd place match
-                          </label>
-                        )}
-                        <button className="btn btn-primary" onClick={handleGenerateFixtures}>Regenerate Fixtures</button>
-                      </div>
-                    </div>
+                    {!isCompleted && (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+                          <span style={{ fontFamily: "var(--font-display)", fontSize: 13, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                            {currentEvent.match_count} {isDoubles ? "pair " : isTeam ? "team " : ""}matches
+                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            {currentEvent.format === "direct_knockout" && (
+                              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
+                                <input type="checkbox" checked={thirdPlace} onChange={e => setThirdPlace(e.target.checked)} style={{ cursor: "pointer" }} />
+                                3rd place match
+                              </label>
+                            )}
+                            <button className="btn btn-primary" onClick={handleGenerateFixtures}>Regenerate Fixtures</button>
+                          </div>
+                        </div>
 
-                    <ManualMatchCreator
-                      format={currentEvent.format}
-                      groups={currentEvent.groups || []}
-                      participants={allParticipants}
-                      isTeam={isTeam || isDoubles}
-                      onCreate={handleCreateMatch}
-                      flash={flash}
-                      eligibleIds={
-                        // Direct knockout: each player appears once in the bracket,
-                        // so hide anyone already placed. Round robin allows repeats.
-                        currentEvent.format === "direct_knockout"
-                          ? new Set(
-                              allParticipants
-                                .map(p => String(p.id))
-                                .filter(id => !(currentEvent.matches || []).some(m =>
-                                  [m.player_1, m.player_2].some(mp =>
-                                    String(mp?.player_id ?? mp?.team_id) === id)))
-                            )
-                          : null
-                      }
-                    />
+                        <ManualMatchCreator
+                          format={currentEvent.format}
+                          groups={currentEvent.groups || []}
+                          participants={allParticipants}
+                          isTeam={isTeam || isDoubles}
+                          onCreate={handleCreateMatch}
+                          flash={flash}
+                          eligibleIds={
+                            // Direct knockout: each player appears once in the bracket,
+                            // so hide anyone already placed. Round robin allows repeats.
+                            currentEvent.format === "direct_knockout"
+                              ? new Set(
+                                  allParticipants
+                                    .map(p => String(p.id))
+                                    .filter(id => !(currentEvent.matches || []).some(m =>
+                                      [m.player_1, m.player_2].some(mp =>
+                                        String(mp?.player_id ?? mp?.team_id) === id)))
+                                )
+                              : null
+                          }
+                        />
+                      </>
+                    )}
 
                     {currentEvent.format === "direct_knockout" ? (
                       <KnockoutBracket matches={currentEvent.matches} onAction={handleMatchAction} onSetConfig={handleSetConfig} onEndMatch={handleEndMatch} sportKey={currentEvent.sport_key} />
@@ -1032,7 +1149,8 @@ export default function EventWorkspace() {
               })()
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* ══ STANDINGS (round_robin / group_knockout) ═══════════ */}
         {tab === "standings" && (
@@ -1766,7 +1884,7 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
 // Group stage = single-elimination bracket per group (with byes).
 // Championship stage = knockout bracket seeded from group winners/runners-up.
 function GroupKnockoutFixtures({
-  event, numGroups, setNumGroups, qualifiersPerGroup, setQualifiersPerGroup,
+  event, isCompleted = false, numGroups, setNumGroups, qualifiersPerGroup, setQualifiersPerGroup,
   thirdPlace, setThirdPlace, onGenerateGroups, onGenerateKnockout,
   onAction, onSetConfig, onEndMatch, sportKey, participantType,
   participants = [], isTeamEvent = false, onCreateMatch, onManualGroupSetup, flash,
@@ -1854,20 +1972,20 @@ function GroupKnockoutFixtures({
             : <><strong style={{ color: "var(--ink)" }}>{doneGroup}/{groupMatches.length}</strong> group matches played</>
           }
         </div>
-        {hasKnockout && (
+        {!isCompleted && hasKnockout && (
           <button className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }} onClick={onGenerateKnockout}>
             Regenerate Championship
           </button>
         )}
-        {!hasKnockout && (
+        {!isCompleted && !hasKnockout && (
           <button className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }} onClick={onGenerateGroups}>
             Reset Groups
           </button>
         )}
       </div>
 
-      {/* Manual match creator */}
-      {onCreateMatch && (
+      {/* Manual match creator — hidden once the tournament is completed */}
+      {!isCompleted && onCreateMatch && (
         <ManualMatchCreator
           format="group_knockout"
           groups={event.groups || []}
@@ -1899,7 +2017,7 @@ function GroupKnockoutFixtures({
       })}
 
       {/* ── Generate Championship CTA (shown when all group finals done & no knockout yet) ── */}
-      {allGroupFinalsDone && !hasKnockout && (
+      {!isCompleted && allGroupFinalsDone && !hasKnockout && (
         <div className="card" style={{ marginTop: 8, marginBottom: 8, background: "linear-gradient(135deg, var(--primary-dim) 0%, rgba(255,107,53,0.05) 100%)", border: "2px solid var(--primary)", borderRadius: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -2292,7 +2410,7 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
               fontSize: 10, padding: "2px 7px", borderRadius: 3,
               fontWeight: 800, fontFamily: "var(--font-display)",
               background: s.is_complete ? "var(--primary-dim)" : "var(--gold-dim)",
-              color:      s.is_complete ? "var(--primary)"     : "var(--gold)",
+              color:      s.is_complete ? "var(--primary)"     : "var(--gold-text)",
             }}>
               S{s.set_number}: {s.score_p1}–{s.score_p2}
             </span>
@@ -2310,14 +2428,14 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
             </span>
           ))}
           {sets.length === 2 && sets[0]?.is_complete && !sets[1]?.is_complete && (
-            <span style={{ color: "var(--gold)", fontWeight: 700 }}>Target: {sets[0].score_p1 + 1}</span>
+            <span style={{ color: "var(--gold-text)", fontWeight: 700 }}>Target: {sets[0].score_p1 + 1}</span>
           )}
         </div>
       )}
 
       {/* ── Winner label ── */}
       {isDone && (
-        <div style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: 0.5, color: "var(--gold)" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: 0.5, color: "var(--gold-text)" }}>
           {m.player_1?.is_winner ? m.player_1.name : m.player_2?.is_winner ? m.player_2.name : "Draw"}
         </div>
       )}

@@ -9,10 +9,7 @@ import { MediaUpload } from "../../../components/shared/MediaUpload";
 import SponsorsSection from "../../../components/organiser/SponsorsSection";
 import TournamentInfoEditor from "../../../components/organiser/TournamentInfoEditor";
 
-const LIFECYCLE = ["draft", "registration", "fixtures", "live", "completed"];
-const LIFECYCLE_LABELS = {
-  draft: "Draft", registration: "Reg", fixtures: "Fixtures", live: "Live", completed: "Done",
-};
+const LIFECYCLE_LABELS = { draft: "Draft", live: "Live", completed: "Completed" };
 
 const SPORT_META = {
   table_tennis: { abbrev: "🏓", label: "Table Tennis", type: "individual" },
@@ -22,11 +19,9 @@ const SPORT_META = {
 };
 
 const STATUS_PILL = {
-  draft:        "pill-gray",
-  registration: "pill-gold",
-  fixtures:     "pill-orange",
-  live:         "pill-orange",
-  completed:    "pill-green",
+  draft:     "pill-gray",
+  live:      "pill-orange",
+  completed: "pill-green",
 };
 
 export default function TournamentOverview() {
@@ -50,8 +45,27 @@ export default function TournamentOverview() {
   }, [loadData]);
 
   const handleTransition = async (status) => {
-    try { await transitionTournament(tournamentId, status); loadData(); flash(`Phase → ${status}`); }
-    catch (e) { flash("Error: " + e.message); }
+    try {
+      await transitionTournament(tournamentId, status);
+      loadData();
+      flash(
+        status === "live"      ? "Tournament published — it's now live!" :
+        status === "completed" ? "Tournament marked completed." :
+        "Tournament moved back to draft."
+      );
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  // "End Registration Now" reuses registration_end_date — setting it to
+  // yesterday closes registration immediately; editing the date again later
+  // reopens it. No separate manual-close flag needed.
+  const handleEndRegistrationNow = async () => {
+    try {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      await updateTournament(data.tournament.org_id, tournamentId, { registration_end_date: yesterday });
+      loadData();
+      flash("Registration closed.");
+    } catch (e) { flash("Error: " + e.message); }
   };
 
   const handleSetupComplete = (updatedEvent) => {
@@ -69,8 +83,6 @@ export default function TournamentOverview() {
     navigate(`/organiser/tournament/${t.tournament_id}/event/${events[0].event_id}`, { replace: true });
     return null;
   }
-
-  const currentIdx = LIFECYCLE.indexOf(t.status);
 
   const unconfiguredCount = events.filter(ev => ev.is_configured === false).length;
   const allConfigured     = unconfiguredCount === 0;
@@ -183,64 +195,53 @@ export default function TournamentOverview() {
           );
         })()}
 
-        {/* ── PHASE CONTROL ── */}
+        {/* ── TOURNAMENT STATUS ── */}
         <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-title">Tournament Phase</div>
+          <div className="card-title">Tournament Status</div>
 
-          <div className="lifecycle-stepper" style={{ display: "flex", alignItems: "center", marginBottom: 16, overflowX: "auto" }}>
-            {LIFECYCLE.map((phase, i) => {
-              const state = i < currentIdx ? "done" : i === currentIdx ? "active" : "pending";
-              return (
-                <div key={phase} style={{ display: "flex", alignItems: "center", flex: 1 }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                    <div
-                      onClick={() => handleTransition(phase)}
-                      className="lifecycle-dot"
-                      style={{
-                        background: state === "pending" ? "var(--elevated)" : "var(--primary)",
-                        color:      state === "pending" ? "var(--subtle)"   : "var(--bg)",
-                        boxShadow:  state === "active"  ? "0 0 0 3px var(--primary-dim)" : "none",
-                        cursor: "pointer",
-                        width: 24, height: 24, borderRadius: "50%",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-                        border: state === "pending" ? "2px solid var(--border)" : "none",
-                        transition: "all .2s",
-                      }}
-                    >
-                      {state === "done" ? "✓" : i + 1}
-                    </div>
-                    <span style={{
-                      fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
-                      textTransform: "uppercase", letterSpacing: 1,
-                      color: state === "pending" ? "var(--subtle)" : "var(--primary)",
-                      marginTop: 4, whiteSpace: "nowrap",
-                    }}>
-                      {LIFECYCLE_LABELS[phase]}
-                    </span>
-                  </div>
-                  {i < LIFECYCLE.length - 1 && (
-                    <div style={{
-                      flex: 1, height: 2, margin: "0 4px", marginBottom: 18,
-                      background: i < currentIdx ? "var(--primary)" : "var(--border)",
-                    }} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {LIFECYCLE.map(phase => (
-              <button
-                key={phase}
-                onClick={() => handleTransition(phase)}
-                className={t.status === phase ? "btn btn-primary btn-sm" : "btn btn-outline btn-sm"}
-              >
-                {LIFECYCLE_LABELS[phase]}
+          {t.status === "draft" && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 420 }}>
+                This tournament is only visible to you. Publish it to make it public and open registration.
+              </div>
+              <button className="btn btn-primary" onClick={() => handleTransition("live")}>
+                Publish Tournament →
               </button>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {t.status === "live" && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                {t.registration_open
+                  ? (t.registration_end_date
+                      ? `Registration is open until ${t.registration_end_date}.`
+                      : "Registration is open — no closing date set yet.")
+                  : "Registration is currently closed."}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {t.registration_open && (
+                  <button className="btn btn-outline btn-sm" onClick={handleEndRegistrationNow}>
+                    End Registration Now
+                  </button>
+                )}
+                <button className="btn btn-outline btn-sm" onClick={() => handleTransition("completed")}>
+                  Mark Tournament Completed
+                </button>
+              </div>
+            </div>
+          )}
+
+          {t.status === "completed" && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                This tournament is marked completed and shown as finished to spectators.
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={() => handleTransition("live")}>
+                Reopen Tournament
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── SHARE LINK ── */}
@@ -335,29 +336,7 @@ export default function TournamentOverview() {
         </div>
 
         {/* ── SPONSORS ── */}
-        <div style={{ position: "relative", marginBottom: user?.plan !== "pro" ? 20 : 0 }}>
-          {user?.plan !== "pro" && (
-            <div style={{
-              position: "absolute", inset: 0, zIndex: 10, borderRadius: 12,
-              background: "var(--surface)", opacity: 0.92,
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
-              border: "1px solid var(--border)",
-            }}>
-              <span style={{ fontSize: 22 }}>🔒</span>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>Pro Feature</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 220 }}>
-                Sponsors require a Pro account.
-              </div>
-              <a href="mailto:hi@thescoreboard.in?subject=Upgrade to Pro" style={{
-                marginTop: 4, padding: "7px 18px", borderRadius: 8,
-                background: "#f59e0b", color: "#fff", fontFamily: "var(--font-display)",
-                fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1,
-                textDecoration: "none",
-              }}>
-                Upgrade →
-              </a>
-            </div>
-          )}
+        <div style={{ position: "relative" }}>
           <SponsorsSection
             tournamentId={t.tournament_id}
             sponsors={t.sponsors || []}

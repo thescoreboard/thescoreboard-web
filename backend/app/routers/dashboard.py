@@ -53,6 +53,7 @@ def get_dashboard(
             "name":          t.name,
             "slug":          t.slug,
             "status":        t.status,
+            "registration_open": t.registration_open,
             "venue":         t.venue,
             "city":          t.city,
             "state":         t.state,
