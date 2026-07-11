@@ -10,6 +10,7 @@ import {
   transitionTournament,
 } from "../../../api/client";
 import PageLoader from "../../../components/shared/PageLoader";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import TTScorer        from "../../../components/scoring/TTScorer";
 import BadmintonScorer from "../../../components/scoring/BadmintonScorer";
 import CricketScorer   from "../../../components/scoring/CricketScorer";
@@ -48,6 +49,7 @@ const finishMatchAPI      = (mId, body) => apiFetch(`/matches/${mId}/finish`, { 
 export default function EventWorkspace() {
   const { tournamentId, eventId } = useParams();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const [data,               setData]               = useState(null);
   const [user,               setUser]               = useState(null);
@@ -580,6 +582,58 @@ export default function EventWorkspace() {
 
           return (
             <div>
+              {/* ── MOBILE CHECKLIST + NAV (mobile only — sections below are unchanged) ── */}
+              {isMobile && (() => {
+                const checklist = [
+                  { label: "Tournament created", done: true },
+                  { label: "Registration open",  done: !!t.registration_open },
+                  { label: "Add first fixtures", done: (currentEvent.match_count || 0) > 0 },
+                ];
+                const doneCount = checklist.filter(i => i.done).length;
+                const navCards = [
+                  { label: "Fixtures",    sub: "Add matches & start scoring",     onClick: () => setTab("fixtures") },
+                  { label: "Registration",sub: "Share sign-up link with players", onClick: () => setTab(pTab) },
+                  showStandings   && { label: "Standings", sub: "Group & round-robin rankings", onClick: () => setTab("standings") },
+                  liveCount > 0   && { label: "Live",      sub: `${liveCount} match${liveCount !== 1 ? "es" : ""} in progress`, onClick: () => setTab("live") },
+                ].filter(Boolean);
+                return (
+                  <>
+                    <div className="card" style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>
+                          Get It Match-Ready
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)" }}>{doneCount}/{checklist.length}</span>
+                      </div>
+                      {checklist.map(item => (
+                        <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                          <span style={{
+                            width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            background: item.done ? "var(--primary)" : "transparent",
+                            border: item.done ? "none" : "2px solid var(--border-mid)",
+                            color: "#fff", fontSize: 11, fontWeight: 900,
+                          }}>
+                            {item.done && "✓"}
+                          </span>
+                          <span style={{ fontSize: 13, color: item.done ? "var(--ink)" : "var(--muted)" }}>{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {navCards.map(card => (
+                      <div key={card.label} className="card card-interactive" onClick={card.onClick}
+                        style={{ marginBottom: 10, cursor: "pointer" }}>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: -0.5, color: "var(--ink)" }}>
+                          {card.label}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{card.sub}</div>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+
               {/* ── Stats bar ── */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
@@ -2390,6 +2444,9 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
               </span>
             )}
             {isDone && <span className="pill pill-green" style={{ padding: "1px 5px", fontSize: 8 }}>DONE</span>}
+            {m.status === "scheduled" && (
+              <span className="pill pill-gray sched-pill-mobile" style={{ padding: "1px 5px", fontSize: 8 }}>SCHEDULED</span>
+            )}
           </div>
           {isLive && sportKey === "cricket"  && ls.overs  && <div style={{ fontSize: 9, color: "var(--primary)", fontWeight: 700, marginTop: 2 }}>{ls.overs} ov</div>}
           {isLive && sportKey === "football" && ls.minute && <div style={{ fontSize: 9, color: "var(--primary)", fontWeight: 700, marginTop: 2 }}>{ls.minute}'</div>}
@@ -2490,12 +2547,12 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
                 </div>
               )}
               {m.status === "scheduled" && (
-                <button className="btn btn-sm btn-danger" style={{ padding: "4px 12px" }}
+                <button className="btn btn-sm btn-danger match-primary-action" style={{ padding: "4px 12px" }}
                   onClick={() => onAction(m.match_id, "start")}>▶ Start</button>
               )}
               {isLive && !endMatchMode && (
                 <>
-                  <button className="btn btn-sm btn-danger" style={{ padding: "4px 12px" }}
+                  <button className="btn btn-sm btn-danger match-primary-action" style={{ padding: "4px 12px" }}
                     onClick={() => onAction(m.match_id, "score")}>Score</button>
                   <button className="btn btn-sm btn-outline" style={{ padding: "4px 10px", fontSize: 11, color: "var(--muted)" }}
                     onClick={() => setEndMatchMode(true)}>End Match</button>
@@ -2517,7 +2574,7 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
                 </div>
               )}
               {isDone && (
-                <button className="btn btn-sm btn-outline" style={{ padding: "4px 12px" }}
+                <button className="btn btn-sm btn-outline match-primary-action" style={{ padding: "4px 12px" }}
                   onClick={() => onAction(m.match_id, "rematch")}>Rematch</button>
               )}
               {!isDone && (

@@ -14,11 +14,15 @@
  *   onClose     – () → void
  */
 import { useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { ReadyScreen, MobileTopBar } from "./MobileScorerKit";
 
 export default function BadmintonScorer({ match, config, onScore, onUndoSet, onWalkover, onGoLive, onPause, onReset, onClose }) {
+  const isMobile = useIsMobile();
   const [showWalkover,  setShowWalkover]  = useState(false);
   const [confirmPause,  setConfirmPause]  = useState(false);
   const [confirmReset,  setConfirmReset]  = useState(false);
+  const [lastScored,    setLastScored]    = useState(null); // mobile "Undo Last Point" target
 
   const p1 = match.player_1 || {};
   const p2 = match.player_2 || {};
@@ -57,6 +61,7 @@ export default function BadmintonScorer({ match, config, onScore, onUndoSet, onW
 
   const addPoint = (player) => {
     if (isDone || setWinner) return;
+    setLastScored(player);
     const ns1 = player === 1 ? s1 + 1 : s1;
     const ns2 = player === 2 ? s2 + 1 : s2;
     // Winner of the rally becomes server
@@ -93,6 +98,178 @@ export default function BadmintonScorer({ match, config, onScore, onUndoSet, onW
     if (isDeuce)             return c.blue;
     return c.ink;
   };
+
+  // Shared walkover modal, reused by both the mobile and desktop layouts.
+  const walkoverModal = showWalkover && (
+    <div style={{ position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ background:c.surface, border:`1px solid ${c.border}`, borderRadius:14, padding:"28px 24px", width:"100%", maxWidth:340 }}>
+        <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:13, fontWeight:900, textTransform:"uppercase", letterSpacing:1, color:c.ink, marginBottom:6 }}>
+          Record Walkover
+        </div>
+        <div style={{ fontSize:12, color:c.muted, marginBottom:20, lineHeight:1.5 }}>
+          The match will be marked as done. The winner advances in the bracket. Walkover score is recorded automatically.
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
+          {[{ pos:1, name:p1Name }, { pos:2, name:p2Name }].map(({ pos, name }) => (
+            <button
+              key={pos}
+              onClick={() => handleWalkover(pos)}
+              style={{ padding:"14px 20px", borderRadius:10, background:`${c.blue}18`, border:`2px solid ${c.blue}`, color:c.ink, fontFamily:"'Unbounded',sans-serif", fontSize:12, fontWeight:800, textTransform:"uppercase", letterSpacing:1, cursor:"pointer" }}
+            >
+              {name} wins by walkover
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setShowWalkover(false)}
+          style={{ width:"100%", padding:"10px 0", background:"transparent", color:c.muted, border:`1px solid ${c.border}`, borderRadius:8, fontSize:12, fontWeight:700, fontFamily:"inherit", cursor:"pointer" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── MOBILE LAYOUT ──────────────────────────────────────────────
+  if (isMobile) {
+    if (isPreLive) {
+      return (
+        <ReadyScreen
+          accent={c.blue}
+          leftName={p1Name}
+          rightName={p2Name}
+          onGoLive={onGoLive}
+          onClose={onClose}
+          gamesLabel={`Games: ${setsWon1} – ${setsWon2}`}
+        />
+      );
+    }
+
+    const statusLabel = isDone ? "Final" : `Game ${currentSet?.set_number || 1}`;
+
+    return (
+      <div style={{
+        position:"fixed", inset:0, zIndex:9999, background:"#000",
+        display:"flex", flexDirection:"column", overflow:"hidden",
+        fontFamily:"'Space Grotesk', system-ui, sans-serif",
+      }}>
+        <MobileTopBar
+          accent={c.blue} statusLabel={statusLabel} statusColor={isDone ? c.gold : c.blue}
+          pulse={!isDone} right={`Games: ${setsWon1} – ${setsWon2}`} onClose={onClose}
+        />
+
+        <div style={{ flex:1, display:"flex", flexDirection:"column", padding:"8px 16px 20px" }}>
+          {!isDone && (
+            <div style={{ textAlign:"center", padding:"10px 0", fontSize:12, color:c.muted, fontWeight:600 }}>
+              Serving: <strong style={{ color:c.blue }}>{serving === 1 ? p1Name : p2Name}</strong>
+            </div>
+          )}
+
+          <div style={{ flex:1, display:"flex", alignItems:"center" }}>
+            {[
+              { pos:1, name:p1Name, score:s1 },
+              { pos:2, name:p2Name, score:s2 },
+            ].map(({ pos, name, score }, i) => {
+              const tappable = !isDone && !setWinner;
+              return (
+                <div key={pos}
+                  onClick={tappable ? () => addPoint(pos) : undefined}
+                  style={{
+                    flex:1, height:"100%", display:"flex", flexDirection:"column",
+                    alignItems:"center", justifyContent:"center", gap:10,
+                    cursor: tappable ? "pointer" : "default", userSelect:"none",
+                    borderRight: i === 0 ? `1px solid ${c.border}` : "none",
+                  }}>
+                  <span style={{ fontSize:11, fontWeight:700, letterSpacing:1.5, textTransform:"uppercase", color: serving===pos && !isDone ? c.blue : c.muted }}>
+                    {name}
+                  </span>
+                  <div style={{
+                    width:88, height:88, borderRadius:"50%",
+                    border:`2px solid ${scoreColor(pos)}`,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:34, fontWeight:900, color: scoreColor(pos),
+                  }}>
+                    {score}
+                  </div>
+                  {tappable && (
+                    <span style={{ fontSize:9, color:c.muted, textTransform:"uppercase", letterSpacing:1.5 }}>
+                      Tap anywhere to score
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {!isDone && !setWinner && isDeuce && (
+            <div style={{ textAlign:"center", fontSize:12, fontWeight:800, textTransform:"uppercase", letterSpacing:2, color:c.blue, marginBottom:10 }}>
+              {isCap ? "Game Point — next wins" : "Deuce — win by 2"}
+            </div>
+          )}
+          {setWinner && !matchWinner && (
+            <div style={{ textAlign:"center", fontSize:13, fontWeight:800, textTransform:"uppercase", letterSpacing:2, color:c.green, marginBottom:10 }}>
+              Game {currentSet?.set_number} → {setWinner === 1 ? p1Name : p2Name}
+            </div>
+          )}
+          {matchWinner && (
+            <div style={{ textAlign:"center", fontSize:16, fontWeight:900, textTransform:"uppercase", letterSpacing:2, color:c.gold, marginBottom:10 }}>
+              {matchWinner === 1 ? p1Name : p2Name} Wins!
+            </div>
+          )}
+
+          {!confirmReset ? (
+            <div style={{ display:"flex", gap:8 }}>
+              <button
+                onClick={() => lastScored && undoPoint(lastScored)}
+                disabled={!lastScored}
+                style={{
+                  flex:1, padding:"13px 0", background:"transparent",
+                  color: lastScored ? c.blue : c.muted, border:`1px solid ${c.border}`, borderRadius:8,
+                  fontWeight:800, fontSize:11, textTransform:"uppercase", letterSpacing:0.5,
+                  fontFamily:"inherit", cursor: lastScored ? "pointer" : "not-allowed",
+                  opacity: lastScored ? 1 : .4,
+                }}
+              >
+                ↩ Undo Last Point
+              </button>
+              <button
+                onClick={() => setConfirmReset(true)}
+                style={{
+                  flex:1, padding:"13px 0", background:"transparent", color:c.muted,
+                  border:`1px solid ${c.border}`, borderRadius:8, fontWeight:800, fontSize:11,
+                  textTransform:"uppercase", letterSpacing:0.5, fontFamily:"inherit", cursor:"pointer",
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          ) : (
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setConfirmReset(false)} style={{ flex:1, padding:"13px 0", background:"transparent", color:c.muted, border:`1px solid ${c.border}`, borderRadius:8, fontWeight:700, fontSize:12, fontFamily:"inherit", cursor:"pointer" }}>
+                Cancel
+              </button>
+              <button onClick={() => { setConfirmReset(false); onReset(); }} style={{ flex:1, padding:"13px 0", background:`${c.red}22`, color:c.red, border:`1px solid ${c.red}`, borderRadius:8, fontWeight:800, fontSize:12, fontFamily:"inherit", cursor:"pointer" }}>
+                Confirm Reset
+              </button>
+            </div>
+          )}
+
+          {!isDone && sets.length > 0 && (
+            <div onClick={onUndoSet} style={{ textAlign:"center", padding:"12px 0 0", fontSize:11, color:c.muted, cursor:"pointer" }}>
+              ↩ Undo Last Game
+            </div>
+          )}
+          {!isDone && onWalkover && (
+            <div onClick={() => setShowWalkover(true)} style={{ textAlign:"center", padding:"8px 0 0", fontSize:11, color:"#ef4444", cursor:"pointer" }}>
+              🚫 Walkover / No Show
+            </div>
+          )}
+        </div>
+
+        {walkoverModal}
+      </div>
+    );
+  }
 
   return (
     <div style={{ position:"fixed", inset:0, zIndex:9999, background:c.bg, display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"'Space Grotesk',sans-serif" }}>
@@ -169,26 +346,33 @@ export default function BadmintonScorer({ match, config, onScore, onUndoSet, onW
           </div>
         )}
 
-        {/* ── SCORE DISPLAY ── */}
+        {/* ── SCORE DISPLAY — tap either side to score (same action as + Point) ── */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16 }}>
           {[
             { name:p1Name, score:s1, pos:1 },
             null,
             { name:p2Name, score:s2, pos:2 },
-          ].map((side, i) =>
-            side ? (
-              <div key={side.pos} style={{ flex:1, textAlign:"center" }}>
+          ].map((side, i) => {
+            const tappable = side && !isDone && !isPreLive && !setWinner;
+            return side ? (
+              <div key={side.pos}
+                onClick={tappable ? () => addPoint(side.pos) : undefined}
+                style={{ flex:1, textAlign:"center", cursor: tappable ? "pointer" : "default", padding:"6px 0", borderRadius:12, transition:"background 150ms ease", userSelect:"none" }}
+              >
                 <div style={{ fontSize:11, fontWeight:700, letterSpacing:2, textTransform:"uppercase", color: serving===side.pos&&!isDone?c.blue:c.muted, marginBottom:8 }}>
                   {side.name}
                 </div>
                 <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:96, fontWeight:900, lineHeight:1, color:scoreColor(side.pos), transition:"color .3s" }}>
                   {side.score}
                 </div>
+                {tappable && (
+                  <div style={{ fontSize:10, color:c.border, textTransform:"uppercase", letterSpacing:1, marginTop:4 }}>Tap to score</div>
+                )}
               </div>
             ) : (
               <div key="vs" style={{ color:c.border, fontSize:28, fontWeight:900, flexShrink:0 }}>—</div>
-            )
-          )}
+            );
+          })}
         </div>
 
         {/* ── GAME / MATCH WINNER BANNER ── */}
@@ -266,36 +450,7 @@ export default function BadmintonScorer({ match, config, onScore, onUndoSet, onW
         )}
       </div>
 
-      {/* ── WALKOVER MODAL ── */}
-      {showWalkover && (
-        <div style={{ position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-          <div style={{ background:c.surface, border:`1px solid ${c.border}`, borderRadius:14, padding:"28px 24px", width:"100%", maxWidth:340 }}>
-            <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:13, fontWeight:900, textTransform:"uppercase", letterSpacing:1, color:c.ink, marginBottom:6 }}>
-              Record Walkover
-            </div>
-            <div style={{ fontSize:12, color:c.muted, marginBottom:20, lineHeight:1.5 }}>
-              The match will be marked as done. The winner advances in the bracket. Walkover score is recorded automatically.
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
-              {[{ pos:1, name:p1Name }, { pos:2, name:p2Name }].map(({ pos, name }) => (
-                <button
-                  key={pos}
-                  onClick={() => handleWalkover(pos)}
-                  style={{ padding:"14px 20px", borderRadius:10, background:`${c.blue}18`, border:`2px solid ${c.blue}`, color:c.ink, fontFamily:"'Unbounded',sans-serif", fontSize:12, fontWeight:800, textTransform:"uppercase", letterSpacing:1, cursor:"pointer" }}
-                >
-                  {name} wins by walkover
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowWalkover(false)}
-              style={{ width:"100%", padding:"10px 0", background:"transparent", color:c.muted, border:`1px solid ${c.border}`, borderRadius:8, fontSize:12, fontWeight:700, fontFamily:"inherit", cursor:"pointer" }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {walkoverModal}
     </div>
   );
 }

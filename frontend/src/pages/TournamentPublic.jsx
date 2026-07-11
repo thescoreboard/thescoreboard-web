@@ -824,18 +824,10 @@ function TournamentInfoDisplay({ info, twoCol = false }) {
         gridTemplateColumns: twoCol ? "1fr 1fr" : undefined,
         flexDirection: twoCol ? undefined : "column",
         gap: 16,
-        alignItems: "start",
+        alignItems: twoCol ? "start" : "stretch",
       }}>
 
-        {/* Overview */}
-        {hasOverview && (
-          <div style={card}>
-            <div style={sectionHead}>📋 Overview</div>
-            {renderText(info.overview)}
-          </div>
-        )}
-
-        {/* Prize Pool */}
+        {/* Prize Pool — top priority */}
         {hasPrizes && (
           <div style={card}>
             <div style={sectionHead}>🏆 Prize Pool</div>
@@ -872,15 +864,7 @@ function TournamentInfoDisplay({ info, twoCol = false }) {
           </div>
         )}
 
-        {/* Rules */}
-        {hasRules && (
-          <div style={card}>
-            <div style={sectionHead}>📏 Rules & Regulations</div>
-            {renderText(info.rules)}
-          </div>
-        )}
-
-        {/* Registration & Contact */}
+        {/* Registration & Contact (entry fee) — top priority */}
         {hasContact && (
           <div style={card}>
             <div style={sectionHead}>📞 Registration & Contact</div>
@@ -935,6 +919,22 @@ function TournamentInfoDisplay({ info, twoCol = false }) {
           </div>
         )}
 
+        {/* Overview */}
+        {hasOverview && (
+          <div style={card}>
+            <div style={sectionHead}>📋 Overview</div>
+            {renderText(info.overview)}
+          </div>
+        )}
+
+        {/* Rules */}
+        {hasRules && (
+          <div style={card}>
+            <div style={sectionHead}>📏 Rules & Regulations</div>
+            {renderText(info.rules)}
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -957,12 +957,14 @@ function SponsorLink({ s, style, children }) {
     </a>
   );
 }
-function SponsorDisplay({ sponsors }) {
+function SponsorDisplay({ sponsors, showTitle = true, bordered = true }) {
   if (!sponsors?.length) return null;
   const byTier = (tier) => sponsors.filter(s => s.tier === tier);
-  const titleSponsors = byTier("title");
+  const titleSponsors = showTitle ? byTier("title") : [];
   const goldSponsors  = byTier("gold");
   const others = TIER_ORDER.slice(2).flatMap(t => byTier(t));
+
+  if (!titleSponsors.length && !goldSponsors.length && !others.length) return null;
 
   const LogoBox = ({ s, size = 40, radius = 8 }) => (
     <div style={{ width:size, height:size, borderRadius:radius, flexShrink:0, background:"var(--surface)", border:"1px solid var(--border)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -974,7 +976,7 @@ function SponsorDisplay({ sponsors }) {
   );
 
   return (
-    <div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid var(--border)" }}>
+    <div style={bordered ? { marginTop:16, paddingTop:14, borderTop:"1px solid var(--border)" } : undefined}>
       <div style={{ fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:2, color:"var(--muted)", fontFamily:"var(--font-display)", marginBottom:10 }}>Our Sponsors</div>
 
       {/* Title sponsors — gold gradient card */}
@@ -1661,6 +1663,9 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
               Register Now →
             </button>
           )}
+
+          {/* Sponsor credit strip — presented-by + other tiers, visible on every tab */}
+          <HeroSponsorStrip sponsors={tournament.sponsors} dark={!!tournament.poster_url} />
         </div>
       </div>
 
@@ -2222,75 +2227,54 @@ function RegisterSection({ events, tournament }) {
   );
 }
 
-// ── Info section (broadcast style) ───────────────────────────
-// ── Title sponsor spotlight — shown at the top of the Info tab ──
-function TitleSponsorCard({ sponsor }) {
-  const card = {
-    background: "var(--surface)", border: "1.5px solid var(--primary)",
-    borderRadius: 12, padding: "20px 22px",
-  };
-  const logo = (
-    <div style={{ width:52, height:52, borderRadius:10, flexShrink:0, background:"var(--elevated)", border:"1px solid var(--border)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      {sponsor.logo_url
-        ? <img src={sponsor.logo_url} alt={sponsor.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
-        : <span style={{ fontFamily:"var(--font-display)", fontSize:20, fontWeight:900, color:"var(--primary)" }}>{sponsor.name[0].toUpperCase()}</span>
+// ── Hero sponsor strip — "presented by" credit line shown at the top
+// of the page (hero band), visible on every tab, not just Info. ──
+function HeroSponsorStrip({ sponsors, dark }) {
+  if (!sponsors?.length) return null;
+  const title  = sponsors.find(s => s.tier === "title");
+  const others = sponsors.filter(s => s.tier !== "title");
+  const dim    = dark ? "rgba(255,255,255,.5)"  : "var(--muted)";
+  const ink    = dark ? "#fff"                  : "var(--ink)";
+  const chipBg = dark ? "rgba(255,255,255,.08)" : "var(--elevated)";
+  const chipBd = dark ? "rgba(255,255,255,.15)" : "var(--border)";
+
+  const Logo = ({ s, size }) => (
+    <div style={{ width:size, height:size, borderRadius:6, flexShrink:0, background:chipBg, border:`1px solid ${chipBd}`, overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {s.logo_url
+        ? <img src={s.logo_url} alt={s.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+        : <span style={{ fontFamily:"var(--font-display)", fontSize:size * 0.42, fontWeight:900, color:"var(--primary)" }}>{s.name[0].toUpperCase()}</span>
       }
     </div>
   );
 
-  const inner = (
-    <>
-      <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-        {logo}
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:2, color:"var(--primary)", marginBottom:3, textTransform:"uppercase" }}>
-            🏆 Title Sponsor
-          </div>
-          <div style={{ fontFamily:"var(--font-display)", fontSize:17, fontWeight:900, color:"var(--ink)" }}>{sponsor.name}</div>
-        </div>
-        {sponsor.website && <span style={{ fontSize:13, color:"var(--muted)", flexShrink:0 }}>↗</span>}
-      </div>
-      {sponsor.description && (
-        <div style={{ fontSize:13, color:"var(--muted)", lineHeight:1.65, marginTop:14 }}>{sponsor.description}</div>
-      )}
-    </>
-  );
-
   return (
-    <div style={card}>
-      {sponsor.website ? (
-        <a href={sponsor.website} target="_blank" rel="noopener noreferrer" style={{ textDecoration:"none", display:"block" }}>
-          {inner}
+    <div style={{ marginTop:18, paddingTop:16, borderTop:`1px solid ${chipBd}`, display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+      {title && (
+        <a href={title.website || undefined} target={title.website ? "_blank" : undefined} rel="noopener noreferrer"
+          style={{ display:"flex", alignItems:"center", gap:8, textDecoration:"none" }}>
+          <Logo s={title} size={28} />
+          <div>
+            <div style={{ fontSize:8, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color:dim }}>Presented By</div>
+            <div style={{ fontSize:12, fontWeight:800, color:ink, fontFamily:"var(--font-display)" }}>{title.name}</div>
+          </div>
         </a>
-      ) : inner}
+      )}
+      {others.length > 0 && (
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          {others.map(s => (
+            s.website
+              ? <a key={s.sponsor_id || s.name} href={s.website} target="_blank" rel="noopener noreferrer" title={s.name}><Logo s={s} size={24} /></a>
+              : <div key={s.sponsor_id || s.name} title={s.name}><Logo s={s} size={24} /></div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function InfoSection({ info, tournament }) {
+function InfoSection({ info }) {
   const w = useW();
   const isMobile = w < 640;
-
-  const fmtDate = (d) => {
-    if (!d) return null;
-    const [y, m, day] = d.split("-");
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    return `${parseInt(day,10)} ${months[parseInt(m,10)-1]} ${y}`;
-  };
-
-  const card = {
-    background:"var(--surface)", border:"1.5px solid var(--border)",
-    borderRadius:12, padding:"20px 22px",
-  };
-  const label = { fontSize:11, fontWeight:700, color:"var(--muted)", marginBottom:4 };
-  const value = { fontSize:14, fontWeight:700, color:"var(--ink)" };
-
-  const startDate = fmtDate(tournament.start_date);
-  const endDate   = fmtDate(tournament.end_date);
-  const dateStr   = startDate && endDate && endDate !== startDate
-    ? `${startDate} – ${endDate}` : startDate || null;
-  const location  = [tournament.city, tournament.state].filter(Boolean).join(", ") || null;
-  const titleSponsor = tournament.sponsors?.find(s => s.tier === "title") ?? null;
 
   return (
     <div style={{ maxWidth:820, margin:"0 auto", padding: isMobile ? "28px 16px" : "44px 40px" }}>
@@ -2298,51 +2282,7 @@ function InfoSection({ info, tournament }) {
 
       <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
 
-        {/* ── Basic Details card — always shown ── */}
-        <div style={card}>
-          <div style={{ fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, color:"var(--muted)", marginBottom:16, textTransform:"uppercase" }}>
-            📋 Basic Details
-          </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-            {tournament.name && (
-              <div>
-                <div style={label}>Tournament</div>
-                <div style={{ ...value, fontSize:16 }}>{tournament.name}</div>
-              </div>
-            )}
-            {tournament.description && (
-              <div>
-                <div style={label}>About</div>
-                <div style={{ fontSize:13, color:"var(--ink)", lineHeight:1.65 }}>{tournament.description}</div>
-              </div>
-            )}
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-              {dateStr && (
-                <div>
-                  <div style={label}>Date</div>
-                  <div style={value}>{dateStr}</div>
-                </div>
-              )}
-              {location && (
-                <div>
-                  <div style={label}>Location</div>
-                  <div style={value}>{location}</div>
-                </div>
-              )}
-            </div>
-            {tournament.org_name && (
-              <div>
-                <div style={label}>Organised By</div>
-                <div style={{ ...value, color:"var(--primary)" }}>{tournament.org_name}</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Title sponsor spotlight ── */}
-        {titleSponsor && <TitleSponsorCard sponsor={titleSponsor} />}
-
-        {/* ── Prize Pool / Rules / Contact from tournament_info JSON ── */}
+        {/* ── Prize Pool / Registration / Overview / Rules from tournament_info JSON ── */}
         <TournamentInfoDisplay info={info} twoCol={false} />
 
       </div>
@@ -3300,7 +3240,7 @@ export default function TournamentPublic() {
         {effectiveActive === "teams"       && hasTeams  && <TeamsSection events={events} isIndividual={isIndividualSport} />}
         {effectiveActive === "leaderboard" && hasBoard  && <LeaderboardSection events={events} />}
         {effectiveActive === "bracket"     && hasBracket && <BracketSection events={events} />}
-        {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} tournament={t} />}
+        {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} />}
       </div>
 
       {/* ── Footer ── */}

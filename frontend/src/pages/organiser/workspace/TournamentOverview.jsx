@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getWorkspace, transitionTournament, updateTournament, clearToken, getMe } from "../../../api/client";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import OrgHeader from "../../../components/shared/OrgHeader";
 import PageLoader from "../../../components/shared/PageLoader";
 import SportSetupModal from "../../../components/organiser/SportSetupModal";
@@ -27,6 +28,7 @@ const STATUS_PILL = {
 export default function TournamentOverview() {
   const { tournamentId } = useParams();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [data, setData]           = useState(null);
   const [user, setUser]           = useState(null);
   const [msg,  setMsg]            = useState("");
@@ -114,6 +116,40 @@ export default function TournamentOverview() {
       {msg && <div className="flash success">{msg}</div>}
 
       <div className="tournament-overview-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px" }}>
+
+        {/* ── MOBILE CHECKLIST (mobile only — desktop sections below are unchanged) ── */}
+        {isMobile && (() => {
+          const checklist = [
+            { label: "Tournament created", done: true },
+            { label: "Registration open",  done: !!t.registration_open },
+            { label: "Add first fixtures", done: (stats.total_matches || 0) > 0 },
+          ];
+          const doneCount = checklist.filter(i => i.done).length;
+          return (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>
+                  Get It Match-Ready
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)" }}>{doneCount}/{checklist.length}</span>
+              </div>
+              {checklist.map(item => (
+                <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                  <span style={{
+                    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: item.done ? "var(--primary)" : "transparent",
+                    border: item.done ? "none" : "2px solid var(--border-mid)",
+                    color: "#fff", fontSize: 11, fontWeight: 900,
+                  }}>
+                    {item.done && "✓"}
+                  </span>
+                  <span style={{ fontSize: 13, color: item.done ? "var(--ink)" : "var(--muted)" }}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* ── TITLE ── */}
         <div style={{ marginBottom: 28 }}>

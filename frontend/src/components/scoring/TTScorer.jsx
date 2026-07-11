@@ -15,8 +15,11 @@
  *   canSwap    — no points scored yet and match not done
  */
 import { useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { ReadyScreen, MobileTopBar } from "./MobileScorerKit";
 
 export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover, onGoLive, onPause, onReset, onClose }) {
+  const isMobile = useIsMobile();
   const p1   = match.player_1;
   const p2   = match.player_2;
   const sets = (match.sets || []).slice().sort((a, b) => a.set_number - b.set_number);
@@ -36,6 +39,7 @@ export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover
   const [baseSwap,       setBaseSwap]       = useState(false);
   const [confirmPause,   setConfirmPause]   = useState(false);
   const [confirmReset,   setConfirmReset]   = useState(false);
+  const [lastScored,     setLastScored]     = useState(null); // mobile "Undo Last Point" target
 
   const pts      = config?.points_per_set  || 11;
   const margin   = config?.win_margin      || 2;
@@ -99,6 +103,8 @@ export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover
     return null;
   })();
 
+  const tappable = !isDone && !isPreLive && !setWinner && !pendingSet;
+
   const checkSetWin = (ns1, ns2) => {
     const d = ns1 >= deuce_at && ns2 >= deuce_at;
     if (d) {
@@ -119,6 +125,7 @@ export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover
   // ── Point buttons ─────────────────────────────────────────────
   const addPoint = (pos) => {
     if (isDone || setWinner || pendingSet) return;
+    setLastScored(pos);
     const ns1 = pos === 1 ? s1 + 1 : s1;
     const ns2 = pos === 2 ? s2 + 1 : s2;
     const winner = checkSetWin(ns1, ns2);
@@ -188,6 +195,291 @@ export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover
       ))}
     </div>
   );
+
+  // Shared overlays (walkover picker + set-confirmation) reused by both the
+  // mobile and desktop layouts so the confirmation flows stay identical.
+  const walkoverOverlay = walkoverPending && (
+    <div style={{
+      position:"absolute", inset:0, zIndex:10,
+      background:"rgba(0,0,0,0.95)",
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      gap:24, padding:32,
+    }}>
+      <div style={{
+        fontSize:10, fontWeight:800,
+        textTransform:"uppercase", letterSpacing:4, color:"#ef4444",
+      }}>
+        Walkover / No Show
+      </div>
+      <div style={{ fontSize:14, color:c.muted, textAlign:"center", fontWeight:600 }}>
+        Who wins? (opponent did not show up or forfeited)
+      </div>
+      <div style={{ display:"flex", gap:16, width:"100%", maxWidth:380 }}>
+        {[
+          { pos: leftPos,  name: leftName  },
+          { pos: rightPos, name: rightName },
+        ].map(({ pos, name }) => (
+          <button
+            key={pos}
+            onClick={() => { setWalkoverPending(false); onWalkover && onWalkover(pos); }}
+            style={{
+              flex:1, padding:"20px 12px", borderRadius:12, cursor:"pointer",
+              fontSize:13, fontWeight:800,
+              textTransform:"uppercase", letterSpacing:0.5,
+              background:"#ef444418", color:"#ef4444",
+              border:"2px solid #ef444455",
+              transition:"all .15s", fontFamily:"inherit",
+            }}
+          >
+            {name}
+            <div style={{ fontSize:10, fontWeight:600, color:c.muted, marginTop:6, textTransform:"none", letterSpacing:0 }}>
+              wins by walkover
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{ fontSize:12, color:c.muted, textAlign:"center" }}>
+        Sets will be recorded as {setsToWin}–0 ({pts}–0 each set)
+      </div>
+      <button
+        onClick={() => setWalkoverPending(false)}
+        style={{
+          background:"transparent", color:c.muted,
+          border:`1px solid ${c.border}`, borderRadius:6,
+          padding:"9px 24px", cursor:"pointer",
+          fontSize:11, fontWeight:700, fontFamily:"inherit",
+        }}
+      >
+        ↩ Cancel
+      </button>
+    </div>
+  );
+
+  const setConfirmOverlay = pendingSet && (
+    <div style={{
+      position:"absolute", inset:0, zIndex:10,
+      background:"rgba(0,0,0,0.93)",
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      gap:24, padding:32,
+    }}>
+      <div style={{
+        fontSize:10, fontWeight:800,
+        textTransform:"uppercase", letterSpacing:4,
+        color: pendingSet.willEndMatch ? c.gold : c.green,
+      }}>
+        {pendingSet.willEndMatch ? "Match Point" : `Set ${pendingSet.setNumber} Complete`}
+      </div>
+
+      <div style={{ textAlign:"center" }}>
+        <div style={{
+          fontSize:24, fontWeight:900, letterSpacing:-1,
+          color: pendingSet.winner === leftPos ? c.green : c.red,
+          marginBottom:6,
+        }}>
+          {pendingSet.winner === leftPos ? leftName : rightName}
+        </div>
+        <div style={{ fontSize:13, color:c.muted, fontWeight:600 }}>
+          {pendingSet.willEndMatch ? "wins the match" : "wins the set"}
+        </div>
+      </div>
+
+      <div style={{
+        background:c.surface2, borderRadius:12,
+        padding:"18px 40px", textAlign:"center",
+        border:`1px solid ${c.border}`,
+      }}>
+        <div style={{
+          fontSize:36, fontWeight:900,
+          color:c.ink, letterSpacing:2, marginBottom:10,
+        }}>
+          {isSwapped ? pendingSet.ns2 : pendingSet.ns1}
+          {" – "}
+          {isSwapped ? pendingSet.ns1 : pendingSet.ns2}
+        </div>
+        <div style={{ fontSize:12, color:c.muted }}>Set {pendingSet.setNumber} score</div>
+        <div style={{ borderTop:`1px solid ${c.border}`, marginTop:12, paddingTop:12, fontSize:13 }}>
+          <span style={{ color:c.muted }}>Sets: </span>
+          <strong style={{ color: pendingSet.winner === leftPos ? c.green : c.ink }}>
+            {isSwapped ? pendingSet.projSetsWon2 : pendingSet.projSetsWon1}
+          </strong>
+          <span style={{ color:c.border, margin:"0 10px" }}>—</span>
+          <strong style={{ color: pendingSet.winner === rightPos ? c.green : c.ink }}>
+            {isSwapped ? pendingSet.projSetsWon1 : pendingSet.projSetsWon2}
+          </strong>
+          <span style={{ color:c.muted, marginLeft:8, fontSize:11 }}>of {setsToWin} needed</span>
+        </div>
+      </div>
+
+      <button
+        onClick={confirmSet}
+        style={{
+          padding:"16px 48px", borderRadius:12, cursor:"pointer",
+          fontSize:13, fontWeight:800,
+          background: pendingSet.willEndMatch ? c.gold : c.green,
+          color: "#000", border:"none",
+          textTransform:"uppercase", letterSpacing:1, fontFamily:"inherit",
+          boxShadow: pendingSet.willEndMatch
+            ? `0 0 32px ${c.gold}44`
+            : `0 0 32px ${c.green}44`,
+        }}
+      >
+        {pendingSet.willEndMatch
+          ? "Confirm Result →"
+          : `Continue to Set ${pendingSet.setNumber + 1} →`}
+      </button>
+
+      <button
+        onClick={() => setPendingSet(null)}
+        style={{
+          background:"transparent", color:c.muted,
+          border:`1px solid ${c.border}`, borderRadius:6,
+          padding:"9px 24px", cursor:"pointer",
+          fontSize:11, fontWeight:700, fontFamily:"inherit",
+        }}
+      >
+        ↩ Cancel (don't score this point)
+      </button>
+    </div>
+  );
+
+  // ── MOBILE LAYOUT ──────────────────────────────────────────────
+  if (isMobile) {
+    if (isPreLive) {
+      return (
+        <ReadyScreen
+          accent={c.green}
+          leftName={leftName}
+          rightName={rightName}
+          onGoLive={onGoLive}
+          onClose={onClose}
+          gamesLabel={`Sets: ${setsWon1} – ${setsWon2}`}
+        />
+      );
+    }
+
+    const statusLabel = isDone ? "Final" : `Set ${currentSet?.set_number || 1}`;
+
+    return (
+      <div style={{
+        position:"fixed", inset:0, zIndex:9999, background:"#000",
+        display:"flex", flexDirection:"column", overflow:"hidden",
+        fontFamily:"'Space Grotesk', system-ui, sans-serif",
+      }}>
+        <MobileTopBar
+          accent={c.green} statusLabel={statusLabel} statusColor={isDone ? c.gold : c.green}
+          pulse={!isDone} right={`Sets: ${setsWon1} – ${setsWon2}`} onClose={onClose}
+        />
+
+        <div style={{ flex:1, display:"flex", flexDirection:"column", padding:"8px 16px 20px" }}>
+          {!isDone && (
+            <div style={{ textAlign:"center", padding:"10px 0", fontSize:12, color:c.muted, fontWeight:600 }}>
+              Serving: <strong style={{ color:c.green }}>{serving === leftPos ? leftName : rightName}</strong>
+            </div>
+          )}
+
+          <div style={{ flex:1, display:"flex", alignItems:"center" }}>
+            {[
+              { pos: leftPos,  name: leftName,  score: leftScore  },
+              { pos: rightPos, name: rightName, score: rightScore },
+            ].map(({ pos, name, score }, i) => (
+              <div key={pos}
+                onClick={tappable ? () => addPoint(pos) : undefined}
+                style={{
+                  flex:1, height:"100%", display:"flex", flexDirection:"column",
+                  alignItems:"center", justifyContent:"center", gap:10,
+                  cursor: tappable ? "pointer" : "default", userSelect:"none",
+                  borderRight: i === 0 ? `1px solid ${c.border}` : "none",
+                }}>
+                <span style={{ fontSize:11, fontWeight:700, letterSpacing:1.5, textTransform:"uppercase", color: serving === pos && !isDone ? c.green : c.muted }}>
+                  {name}
+                </span>
+                <div style={{
+                  width:88, height:88, borderRadius:"50%",
+                  border:`2px solid ${scoreColor(pos)}`,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:34, fontWeight:900, color: scoreColor(pos),
+                }}>
+                  {score}
+                </div>
+                {tappable && (
+                  <span style={{ fontSize:9, color:c.muted, textTransform:"uppercase", letterSpacing:1.5 }}>
+                    Tap anywhere to score
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {isDeuce && !setWinner && (
+            <div style={{ textAlign:"center", fontSize:12, fontWeight:800, textTransform:"uppercase", letterSpacing:2, color:c.red, marginBottom:10 }}>
+              {s1 === s2 ? "Deuce" : `Advantage ${s1 > s2 ? (isSwapped ? rightName : leftName) : (isSwapped ? leftName : rightName)}`}
+            </div>
+          )}
+          {setWinner && !matchWinner && (
+            <div style={{ textAlign:"center", fontSize:13, fontWeight:800, textTransform:"uppercase", letterSpacing:2, color:c.green, marginBottom:10 }}>
+              Set {currentSet?.set_number} → {setWinner === leftPos ? leftName : rightName}
+            </div>
+          )}
+          {matchWinner && (
+            <div style={{ textAlign:"center", fontSize:16, fontWeight:900, textTransform:"uppercase", letterSpacing:2, color:c.gold, marginBottom:10 }}>
+              {matchWinner === leftPos ? leftName : rightName} Wins!
+            </div>
+          )}
+
+          {!confirmReset ? (
+            <div style={{ display:"flex", gap:8 }}>
+              <button
+                onClick={() => lastScored && undoPoint(lastScored)}
+                disabled={!lastScored}
+                style={{
+                  flex:1, padding:"13px 0", background:"transparent",
+                  color: lastScored ? c.green : c.muted, border:`1px solid ${c.border}`, borderRadius:8,
+                  fontWeight:800, fontSize:11, textTransform:"uppercase", letterSpacing:0.5,
+                  fontFamily:"inherit", cursor: lastScored ? "pointer" : "not-allowed",
+                  opacity: lastScored ? 1 : .4,
+                }}
+              >
+                ↩ Undo Last Point
+              </button>
+              <button
+                onClick={() => setConfirmReset(true)}
+                style={{
+                  flex:1, padding:"13px 0", background:"transparent", color:c.muted,
+                  border:`1px solid ${c.border}`, borderRadius:8, fontWeight:800, fontSize:11,
+                  textTransform:"uppercase", letterSpacing:0.5, fontFamily:"inherit", cursor:"pointer",
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          ) : (
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setConfirmReset(false)} style={{ flex:1, padding:"13px 0", background:"transparent", color:c.muted, border:`1px solid ${c.border}`, borderRadius:8, fontWeight:700, fontSize:12, fontFamily:"inherit", cursor:"pointer" }}>
+                Cancel
+              </button>
+              <button onClick={() => { setConfirmReset(false); onReset(); }} style={{ flex:1, padding:"13px 0", background:`${c.red}22`, color:c.red, border:`1px solid ${c.red}`, borderRadius:8, fontWeight:800, fontSize:12, fontFamily:"inherit", cursor:"pointer" }}>
+                Confirm Reset
+              </button>
+            </div>
+          )}
+
+          {!isDone && sets.length > 0 && !pendingSet && !walkoverPending && (
+            <div onClick={onUndoSet} style={{ textAlign:"center", padding:"12px 0 0", fontSize:11, color:c.muted, cursor:"pointer" }}>
+              ↩ Undo Last Set
+            </div>
+          )}
+          {!isDone && !pendingSet && !walkoverPending && onWalkover && (
+            <div onClick={() => setWalkoverPending(true)} style={{ textAlign:"center", padding:"8px 0 0", fontSize:11, color:"#ef4444", cursor:"pointer" }}>
+              🚫 Walkover / No Show
+            </div>
+          )}
+        </div>
+
+        {walkoverOverlay}
+        {setConfirmOverlay}
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -354,15 +646,18 @@ export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover
         {/* ── SCORE DISPLAY ── */}
         <div style={{ display:"flex", alignItems:"stretch", justifyContent:"center", gap:12 }}>
 
-          {/* LEFT PANEL */}
-          <div style={{
-            flex:1, textAlign:"center", padding:"16px 8px 12px",
-            background: leftServing && !isDone ? `${c.green}0e` : c.surface,
-            borderRadius:14,
-            border: `1px solid ${leftServing && !isDone ? c.green + "44" : c.border}`,
-            boxShadow: leftServing && !isDone ? `0 0 24px ${c.green}18` : "none",
-            transition:"all .3s",
-          }}>
+          {/* LEFT PANEL — tap to score (same action as + Point) */}
+          <div
+            onClick={tappable ? () => addPoint(leftPos) : undefined}
+            style={{
+              flex:1, textAlign:"center", padding:"16px 8px 12px",
+              background: leftServing && !isDone ? `${c.green}0e` : c.surface,
+              borderRadius:14,
+              border: `1px solid ${leftServing && !isDone ? c.green + "44" : c.border}`,
+              boxShadow: leftServing && !isDone ? `0 0 24px ${c.green}18` : "none",
+              transition:"all .3s",
+              cursor: tappable ? "pointer" : "default", userSelect:"none",
+            }}>
             {/* Serving dot */}
             <div style={{ height:10, display:"flex", justifyContent:"center", marginBottom:8 }}>
               {leftServing && !isDone && (
@@ -395,15 +690,18 @@ export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover
             color:c.border, fontSize:24, fontWeight:900, flexShrink:0, padding:"0 4px",
           }}>—</div>
 
-          {/* RIGHT PANEL */}
-          <div style={{
-            flex:1, textAlign:"center", padding:"16px 8px 12px",
-            background: rightServing && !isDone ? `${c.green}0e` : c.surface,
-            borderRadius:14,
-            border: `1px solid ${rightServing && !isDone ? c.green + "44" : c.border}`,
-            boxShadow: rightServing && !isDone ? `0 0 24px ${c.green}18` : "none",
-            transition:"all .3s",
-          }}>
+          {/* RIGHT PANEL — tap to score (same action as + Point) */}
+          <div
+            onClick={tappable ? () => addPoint(rightPos) : undefined}
+            style={{
+              flex:1, textAlign:"center", padding:"16px 8px 12px",
+              background: rightServing && !isDone ? `${c.green}0e` : c.surface,
+              borderRadius:14,
+              border: `1px solid ${rightServing && !isDone ? c.green + "44" : c.border}`,
+              boxShadow: rightServing && !isDone ? `0 0 24px ${c.green}18` : "none",
+              transition:"all .3s",
+              cursor: tappable ? "pointer" : "default", userSelect:"none",
+            }}>
             <div style={{ height:10, display:"flex", justifyContent:"center", marginBottom:8 }}>
               {rightServing && !isDone && (
                 <div className="tt-pulse" style={{
@@ -562,151 +860,8 @@ export default function TTScorer({ match, config, onScore, onUndoSet, onWalkover
         )}
       </div>
 
-      {/* ── WALKOVER OVERLAY ── */}
-      {walkoverPending && (
-        <div style={{
-          position:"absolute", inset:0, zIndex:10,
-          background:"rgba(0,0,0,0.95)",
-          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-          gap:24, padding:32,
-        }}>
-          <div style={{
-            fontSize:10, fontWeight:800,
-            textTransform:"uppercase", letterSpacing:4, color:"#ef4444",
-          }}>
-            Walkover / No Show
-          </div>
-          <div style={{ fontSize:14, color:c.muted, textAlign:"center", fontWeight:600 }}>
-            Who wins? (opponent did not show up or forfeited)
-          </div>
-          <div style={{ display:"flex", gap:16, width:"100%", maxWidth:380 }}>
-            {[
-              { pos: leftPos,  name: leftName  },
-              { pos: rightPos, name: rightName },
-            ].map(({ pos, name }) => (
-              <button
-                key={pos}
-                onClick={() => { setWalkoverPending(false); onWalkover && onWalkover(pos); }}
-                style={{
-                  flex:1, padding:"20px 12px", borderRadius:12, cursor:"pointer",
-                  fontSize:13, fontWeight:800,
-                  textTransform:"uppercase", letterSpacing:0.5,
-                  background:"#ef444418", color:"#ef4444",
-                  border:"2px solid #ef444455",
-                  transition:"all .15s", fontFamily:"inherit",
-                }}
-              >
-                {name}
-                <div style={{ fontSize:10, fontWeight:600, color:c.muted, marginTop:6, textTransform:"none", letterSpacing:0 }}>
-                  wins by walkover
-                </div>
-              </button>
-            ))}
-          </div>
-          <div style={{ fontSize:12, color:c.muted, textAlign:"center" }}>
-            Sets will be recorded as {setsToWin}–0 ({pts}–0 each set)
-          </div>
-          <button
-            onClick={() => setWalkoverPending(false)}
-            style={{
-              background:"transparent", color:c.muted,
-              border:`1px solid ${c.border}`, borderRadius:6,
-              padding:"9px 24px", cursor:"pointer",
-              fontSize:11, fontWeight:700, fontFamily:"inherit",
-            }}
-          >
-            ↩ Cancel
-          </button>
-        </div>
-      )}
-
-      {/* ── SET CONFIRMATION OVERLAY ── */}
-      {pendingSet && (
-        <div style={{
-          position:"absolute", inset:0, zIndex:10,
-          background:"rgba(0,0,0,0.93)",
-          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-          gap:24, padding:32,
-        }}>
-          <div style={{
-            fontSize:10, fontWeight:800,
-            textTransform:"uppercase", letterSpacing:4,
-            color: pendingSet.willEndMatch ? c.gold : c.green,
-          }}>
-            {pendingSet.willEndMatch ? "Match Point" : `Set ${pendingSet.setNumber} Complete`}
-          </div>
-
-          <div style={{ textAlign:"center" }}>
-            <div style={{
-              fontSize:24, fontWeight:900, letterSpacing:-1,
-              color: pendingSet.winner === leftPos ? c.green : c.red,
-              marginBottom:6,
-            }}>
-              {pendingSet.winner === leftPos ? leftName : rightName}
-            </div>
-            <div style={{ fontSize:13, color:c.muted, fontWeight:600 }}>
-              {pendingSet.willEndMatch ? "wins the match" : "wins the set"}
-            </div>
-          </div>
-
-          <div style={{
-            background:c.surface2, borderRadius:12,
-            padding:"18px 40px", textAlign:"center",
-            border:`1px solid ${c.border}`,
-          }}>
-            <div style={{
-              fontSize:36, fontWeight:900,
-              color:c.ink, letterSpacing:2, marginBottom:10,
-            }}>
-              {isSwapped ? pendingSet.ns2 : pendingSet.ns1}
-              {" – "}
-              {isSwapped ? pendingSet.ns1 : pendingSet.ns2}
-            </div>
-            <div style={{ fontSize:12, color:c.muted }}>Set {pendingSet.setNumber} score</div>
-            <div style={{ borderTop:`1px solid ${c.border}`, marginTop:12, paddingTop:12, fontSize:13 }}>
-              <span style={{ color:c.muted }}>Sets: </span>
-              <strong style={{ color: pendingSet.winner === leftPos ? c.green : c.ink }}>
-                {isSwapped ? pendingSet.projSetsWon2 : pendingSet.projSetsWon1}
-              </strong>
-              <span style={{ color:c.border, margin:"0 10px" }}>—</span>
-              <strong style={{ color: pendingSet.winner === rightPos ? c.green : c.ink }}>
-                {isSwapped ? pendingSet.projSetsWon1 : pendingSet.projSetsWon2}
-              </strong>
-              <span style={{ color:c.muted, marginLeft:8, fontSize:11 }}>of {setsToWin} needed</span>
-            </div>
-          </div>
-
-          <button
-            onClick={confirmSet}
-            style={{
-              padding:"16px 48px", borderRadius:12, cursor:"pointer",
-              fontSize:13, fontWeight:800,
-              background: pendingSet.willEndMatch ? c.gold : c.green,
-              color: "#000", border:"none",
-              textTransform:"uppercase", letterSpacing:1, fontFamily:"inherit",
-              boxShadow: pendingSet.willEndMatch
-                ? `0 0 32px ${c.gold}44`
-                : `0 0 32px ${c.green}44`,
-            }}
-          >
-            {pendingSet.willEndMatch
-              ? "Confirm Result →"
-              : `Continue to Set ${pendingSet.setNumber + 1} →`}
-          </button>
-
-          <button
-            onClick={() => setPendingSet(null)}
-            style={{
-              background:"transparent", color:c.muted,
-              border:`1px solid ${c.border}`, borderRadius:6,
-              padding:"9px 24px", cursor:"pointer",
-              fontSize:11, fontWeight:700, fontFamily:"inherit",
-            }}
-          >
-            ↩ Cancel (don't score this point)
-          </button>
-        </div>
-      )}
+      {walkoverOverlay}
+      {setConfirmOverlay}
     </div>
   );
 }

@@ -385,6 +385,26 @@ export default function Dashboard() {
         </main>
       </div>
 
+      {/* ── FAB (mobile only) — quick create without opening the drawer ── */}
+      {activeOrg && (
+        <button
+          onClick={() => navigate("/organiser/create")}
+          style={{
+            position: "fixed", bottom: 24, right: 20, zIndex: 100,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 56, height: 56, borderRadius: "50%",
+            background: "var(--primary)", color: "#fff",
+            border: "none", fontSize: 26, lineHeight: 1,
+            boxShadow: "0 4px 20px rgba(255,107,53,0.5)", cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          className="fab-hide-desktop"
+          title="New Tournament"
+        >
+          +
+        </button>
+      )}
+
       {/* ── ONBOARDING ── */}
       {onboarding && (
         <div className="overlay" onClick={() => setOnboarding(false)}>

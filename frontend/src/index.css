@@ -1591,7 +1591,19 @@
   .landing-hero { padding: 40px 16px 28px !important; }
   .landing-hero h1 { font-size: 28px !important; }
   .landing-hero p { font-size: 15px !important; }
+
+  /* ── Match card (Fixtures list) — big full-width primary action ── */
+  .match-row .match-primary-action {
+    width: 100%;
+    padding: 13px 0 !important;
+    font-size: 13px !important;
+    font-weight: 800;
+    border-radius: 8px;
+    margin-top: 4px;
+  }
+  .sched-pill-mobile { display: inline-flex !important; }
 }
+.sched-pill-mobile { display: none; }
 @media (max-width: 640px) {
   .landing-stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
