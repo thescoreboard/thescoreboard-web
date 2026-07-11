@@ -7,12 +7,12 @@ from typing import List
 
 from app.database import get_db
 from app.models.user import User
-from app.models.organization import OrgMember
 from app.models.tournament import Tournament
 from app.models.event import Event
 from app.models.match import Match
 from app.schemas.event import EventCreate, EventUpdate, EventOut, EventSetupInput
 from app.utils.auth import get_current_user
+from app.utils.tournament_access import require_tournament_access, require_event_access
 from app.sports.registry import get_sport_engine, list_sports
 
 router = APIRouter()
@@ -20,33 +20,13 @@ router = APIRouter()
 _VALID_FORMATS = ["group_knockout", "direct_knockout", "round_robin"]
 
 
-
 def _get_tournament_and_check(tournament_id: int, user: User, db: Session) -> Tournament:
-    t = db.query(Tournament).filter(Tournament.tournament_id == tournament_id).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Tournament not found")
-    if not user.is_superadmin:
-        member = db.query(OrgMember).filter(
-            OrgMember.org_id == t.org_id,
-            OrgMember.user_id == user.user_id,
-        ).first()
-        if not member:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    t, _ = require_tournament_access(tournament_id, user, db)
     return t
 
 
 def _get_event_and_check(event_id: int, user: User, db: Session) -> Event:
-    event = db.query(Event).filter(Event.event_id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    if not user.is_superadmin:
-        member = db.query(OrgMember).filter(
-            OrgMember.org_id == t.org_id,
-            OrgMember.user_id == user.user_id,
-        ).first()
-        if not member:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    event, _, _ = require_event_access(event_id, user, db)
     return event
 
 

@@ -8,6 +8,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getTournamentBySlug, getSportTournament } from "../api/client";
 import RoadToFinal from "../components/shared/RoadToFinal";
 import PageLoader from "../components/shared/PageLoader";
+import SiteFooter from "../components/shared/SiteFooter";
 import { ShareButton } from "../components/shared/ShareButton";
 import { useShare } from "../hooks/useShare";
 
@@ -3178,6 +3179,7 @@ export default function TournamentPublic() {
       <TopBar darkMode={darkMode} onToggleDark={toggleDark} />
       <HeroBand tournament={t} totalPlayers={0} doneMatches={0} totalMatches={0} sportKey={primarySportKey} onRegister={null} events={events} slug={slug} />
       <DraftView tournament={t} />
+      <SiteFooter />
     </div>
   );
 
@@ -3244,13 +3246,9 @@ export default function TournamentPublic() {
       </div>
 
       {/* ── Footer ── */}
-      <footer style={{ borderTop:"2px solid var(--ink)", padding:"20px 16px", marginTop:40 }}>
-        <div style={{ maxWidth:1240, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <span style={{ fontFamily:"var(--font-display)", fontSize:8, color:"var(--muted)", letterSpacing:2 }}>
-            POWERED BY <span style={{ color:"var(--primary)" }}>THE</span>SCORE<span style={{ color:"var(--primary)" }}>BOARD</span>
-          </span>
-        </div>
-      </footer>
+      <div style={{ marginTop:40 }}>
+        <SiteFooter />
+      </div>
 
       {selectedMatch && <MatchDetailModal match={selectedMatch} onClose={() => setSelectedMatch(null)} />}
     </div>

@@ -907,3 +907,37 @@ def public_register(
         "enrolled_events":enrolled,
         "message":        f"Successfully registered for {tournament.name}",
     }
+
+# ── Tournament invite info (pre-accept preview) ───────────────────────────────
+
+@router.get("/invites/{token}")
+def get_invite_info(token: str, db: Session = Depends(get_db)):
+    """Public preview of an invite link — shown before login/accept so the
+    recipient knows what they're joining. Never exposes more than the
+    tournament name, org name, granted role, and inviter's first name."""
+    from app.models.tournament_member import TournamentInvite
+    from app.models.user import User
+    from app.routers.tournament_members import _invite_state
+
+    invite = db.query(TournamentInvite).filter(TournamentInvite.token == token).first()
+    if not invite:
+        return {"valid": False, "reason": "not_found"}
+    state = _invite_state(invite)
+    if state:
+        return {"valid": False, "reason": state}
+
+    t = db.query(Tournament).filter(
+        Tournament.tournament_id == invite.tournament_id).first()
+    if not t:
+        return {"valid": False, "reason": "not_found"}
+
+    inviter = db.query(User).filter(User.user_id == invite.created_by).first() if invite.created_by else None
+    org = t.organization
+
+    return {
+        "valid": True,
+        "tournament_name": t.name,
+        "org_name": org.name if org else None,
+        "role": invite.role,
+        "inviter_name": inviter.name if inviter else None,
+    }

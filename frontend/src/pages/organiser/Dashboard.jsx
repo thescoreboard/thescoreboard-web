@@ -26,6 +26,7 @@ export default function Dashboard() {
   const [orgs,        setOrgs]        = useState([]);   // [{org_id, name, ...}]
   const [orgData,     setOrgData]     = useState({});   // org_id → { org, tournaments[] }
   const [activeOrg,   setActiveOrg]   = useState(null);
+  const [sharedTournaments, setSharedTournaments] = useState([]); // invited via TournamentMember
   const [msg,         setMsg]         = useState("");
 
   // Tournaments for the currently-selected org
@@ -54,12 +55,15 @@ export default function Dashboard() {
 
       setUser(data.user);
       setStoredUser(data.user); // keep localStorage in sync for OrgHeader + role helpers
+      setSharedTournaments(data.shared_tournaments || []);
       const orgList = data.orgs || [];
       const map = {};
       let cleanOrgs = orgList.map(({ tournaments, ...o }) => { map[o.org_id] = { org: o, tournaments: tournaments || [] }; return o; });
 
-      // Auto-create a personal org for first-time organisers — no onboarding gate
-      if (!cleanOrgs.length && data.user) {
+      // Auto-create a personal org for first-time organisers — no onboarding gate.
+      // Skip when they were invited to help run someone else's tournament:
+      // they may never need an org of their own.
+      if (!cleanOrgs.length && data.user && !(data.shared_tournaments || []).length) {
         try {
           const autoName = data.user.name ? `${data.user.name}'s Club` : "My Club";
           const org = await createOrg({ name: autoName, city: "", state: "" });
@@ -353,9 +357,15 @@ export default function Dashboard() {
           {!activeOrg ? (
             <div className="empty">
               <div className="empty-icon"></div>
-              <div className="empty-title">No Organization Yet</div>
-              <p style={{ fontSize:13 }}>Create an organization first to run tournaments.</p>
-              <button className="btn btn-primary" style={{ marginTop:16 }} onClick={() => setOnboarding(true)}>Get Started</button>
+              <div className="empty-title">{sharedTournaments.length ? "No Club of Your Own Yet" : "No Organization Yet"}</div>
+              <p style={{ fontSize:13 }}>
+                {sharedTournaments.length
+                  ? "You're helping run tournaments below. Create your own club to host your own."
+                  : "Create an organization first to run tournaments."}
+              </p>
+              <button className="btn btn-primary" style={{ marginTop:16 }} onClick={() => setOnboarding(true)}>
+                {sharedTournaments.length ? "Create Your Own Club" : "Get Started"}
+              </button>
             </div>
           ) : sorted.length === 0 ? (
             <div className="empty">
@@ -381,6 +391,30 @@ export default function Dashboard() {
                 onCopy={() => { navigator.clipboard.writeText(`${window.location.origin}/t/${t.slug}`); flash("Link copied!"); setShowKebab(null); }}
               />
             ))}</div>
+          )}
+
+          {/* ── Shared with me — tournaments I was invited to help run ── */}
+          {sharedTournaments.length > 0 && (
+            <>
+              <div className="section-label" style={{ marginTop: 28 }}>Shared With Me</div>
+              <div className="dashboard-tournaments">{sharedTournaments.map(t => (
+                <TournamentCard key={`shared-${t.tournament_id}`} tournament={t}
+                  roleBadge={t.my_role}
+                  orgName={t.org_name}
+                  showKebab={showKebab===`shared-${t.tournament_id}`}
+                  onKebabToggle={e => { e.stopPropagation(); setShowKebab(showKebab===`shared-${t.tournament_id}`?null:`shared-${t.tournament_id}`); }}
+                  onManage={() => {
+                    const events = t.events || [];
+                    if (!t.is_multi_sport && events.length === 1 && events[0].is_configured !== false) {
+                      navigate(`/organiser/tournament/${t.tournament_id}/event/${events[0].event_id}`);
+                    } else {
+                      navigate(`/organiser/tournament/${t.tournament_id}`);
+                    }
+                  }}
+                  onCopy={() => { navigator.clipboard.writeText(`${window.location.origin}/t/${t.slug}`); flash("Link copied!"); setShowKebab(null); }}
+                />
+              ))}</div>
+            </>
           )}
         </main>
       </div>
@@ -493,7 +527,7 @@ export default function Dashboard() {
   );
 }
 
-function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDelete, onCopy }) {
+function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDelete, onCopy, roleBadge, orgName }) {
   const events  = t.events || [];
   const icons   = sportIcons(events);
   const sm      = STATUS_META[t.status] || STATUS_META.draft;
@@ -529,7 +563,9 @@ function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDe
             whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
           }}>{t.name}</div>
           <div style={{ fontSize:12, color:"var(--muted)", marginTop:1 }}>
-            {[t.venue, t.city].filter(Boolean).join(" · ") || "No venue set"}
+            {orgName
+              ? <>by {orgName}{t.city ? ` · ${t.city}` : ""}</>
+              : ([t.venue, t.city].filter(Boolean).join(" · ") || "No venue set")}
           </div>
           <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap", alignItems:"center" }}>
             <span style={{
@@ -542,6 +578,11 @@ function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDe
               {isLive && <span style={{ width:5, height:5, borderRadius:"50%", background:"var(--primary)", animation:"pulse 1.5s infinite", display:"inline-block" }}/>}
               {sm.label}
             </span>
+            {roleBadge && (
+              <span className={roleBadge === "admin" ? "pill pill-orange" : "pill pill-green"} style={{ fontSize:10 }}>
+                {roleBadge === "admin" ? "Admin" : "Staff"}
+              </span>
+            )}
             {events.length > 0 && (
               <span style={{ fontSize:11, color:"var(--muted)", fontWeight:600 }}>
                 {events.length} event{events.length!==1?"s":""}
@@ -562,7 +603,7 @@ function TournamentCard({ tournament:t, showKebab, onKebabToggle, onManage, onDe
             <div className="kebab-menu" onClick={e=>e.stopPropagation()}>
               <button className="kebab-item" onClick={onManage}>✏ Edit / Manage</button>
               <button className="kebab-item" onClick={onCopy}>⛓ Copy share link</button>
-              <button className="kebab-item danger" onClick={onDelete}>✕ Delete</button>
+              {onDelete && <button className="kebab-item danger" onClick={onDelete}>✕ Delete</button>}
             </div>
           )}
         </div>

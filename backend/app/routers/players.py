@@ -7,13 +7,13 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.models.user import User
-from app.models.organization import OrgMember
 from app.models.tournament import Tournament
 from app.models.event import Event
 from app.models.player import Player
 from app.models.group import Group, EventParticipant
 from app.schemas.player import PlayerCreate, PlayerOut, EventParticipantOut
 from app.utils.auth import get_current_user
+from app.utils.tournament_access import require_org_access, require_event_access
 
 router = APIRouter()
 
@@ -21,15 +21,10 @@ router = APIRouter()
 # ── Player CRUD ──────────────────────────────────────────────
 
 def _check_org_member(org_id: int, user: User, db: Session) -> None:
-    """Raise 403 if the caller is not a member of org_id (superadmins bypass)."""
-    if user.is_superadmin:
-        return
-    member = db.query(OrgMember).filter(
-        OrgMember.org_id == org_id,
-        OrgMember.user_id == user.user_id,
-    ).first()
-    if not member:
-        raise HTTPException(status_code=403, detail="Not a member of this organization")
+    """Raise 403 unless the caller may use this org's player pool: org
+    members, superadmins, and members of any tournament owned by the org
+    (tournament staff need to register players)."""
+    require_org_access(org_id, user, db, allow_tournament_members=True)
 
 
 @router.post("/", response_model=PlayerOut)
@@ -98,9 +93,8 @@ def add_player_to_event(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    event = db.query(Event).filter(Event.event_id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+    # SEC-4: enrolling a player mutates the event — require tournament access
+    event, _, _ = require_event_access(event_id, user, db)
 
     player = db.query(Player).filter(Player.player_id == player_id).first()
     if not player:
@@ -209,6 +203,7 @@ def assign_player_group(
     user: User = Depends(get_current_user),
 ):
     """Set (or clear) a participant's group and/or seed level."""
+    require_event_access(event_id, user, db)
     ep = db.query(EventParticipant).filter(
         EventParticipant.event_id == event_id,
         EventParticipant.player_id == player_id,
@@ -256,6 +251,7 @@ def remove_player_from_event(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_event_access(event_id, user, db)
     ep = db.query(EventParticipant).filter(
         EventParticipant.event_id == event_id,
         EventParticipant.player_id == player_id,
@@ -276,9 +272,7 @@ def create_group(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    event = db.query(Event).filter(Event.event_id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+    require_event_access(event_id, user, db)
 
     group = Group(event_id=event_id, name=name)
     db.add(group)

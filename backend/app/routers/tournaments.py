@@ -16,6 +16,10 @@ from app.models.group import Group, EventParticipant
 from app.schemas.tournament import TournamentCreate, TournamentUpdate, TournamentOut, SponsorCreate, SponsorUpdate, SponsorOut
 from app.utils.auth import get_current_user
 from app.utils.slug import generate_unique_slug
+from app.utils.tournament_access import (
+    require_tournament_access, require_org_access, ensure_role,
+    ROLE_ADMIN, ROLE_STAFF,
+)
 from app.sports.registry import get_sport_engine
 from app.sports.bracket import build_bracket, assign_players_to_groups, order_group_qualifiers
 
@@ -23,20 +27,20 @@ router = APIRouter()
 
 
 # ── Helpers ───────────────────────────────────────────────────
+# Authorization lives in app.utils.tournament_access. Membership in the
+# owning org OR a TournamentMember row grants access; "admin" is required
+# for the danger zone (publish/delete/members), "staff" for everything else.
 
 def _check_org_access(org_id: int, user: User, db: Session):
-    if not user.is_superadmin:
-        member = db.query(OrgMember).filter(
-            OrgMember.org_id == org_id, OrgMember.user_id == user.user_id).first()
-        if not member:
-            raise HTTPException(status_code=403, detail="Not authorized for this organization")
+    """Org-only check — used where per-tournament roles don't apply
+    (creating/listing tournaments inside an org)."""
+    require_org_access(org_id, user, db)
 
 
-def _check_tournament_access(tournament_id: int, user: User, db: Session) -> Tournament:
-    t = db.query(Tournament).filter(Tournament.tournament_id == tournament_id).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Tournament not found")
-    _check_org_access(t.org_id, user, db)
+def _check_tournament_access(
+    tournament_id: int, user: User, db: Session, min_role: str = ROLE_STAFF,
+) -> Tournament:
+    t, _ = require_tournament_access(tournament_id, user, db, min_role)
     return t
 
 
@@ -210,7 +214,7 @@ def get_workspace(
     user: User = Depends(get_current_user),
 ):
     """Returns ALL data needed to render the tournament workspace."""
-    t = _check_tournament_access(tournament_id, user, db)
+    t, my_role = require_tournament_access(tournament_id, user, db)
 
     events_data = []
     total_players = 0
@@ -379,6 +383,7 @@ def get_workspace(
             "live_matches":   total_live,
             "done_matches":   total_done,
         },
+        "my_role": my_role,
     }
 
 
@@ -415,10 +420,8 @@ def update_tournament(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _check_org_access(org_id, user, db)
-    t = db.query(Tournament).filter(
-        Tournament.tournament_id == tournament_id, Tournament.org_id == org_id).first()
-    if not t:
+    t = _check_tournament_access(tournament_id, user, db)
+    if t.org_id != org_id:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     # ERR-3: status transitions must go through the dedicated /transition endpoint
@@ -444,12 +447,8 @@ def delete_tournament(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _check_org_access(org_id, user, db)
-    t = db.query(Tournament).filter(
-        Tournament.tournament_id == tournament_id,
-        Tournament.org_id == org_id,
-    ).first()
-    if not t:
+    t = _check_tournament_access(tournament_id, user, db, min_role=ROLE_ADMIN)
+    if t.org_id != org_id:
         raise HTTPException(status_code=404, detail="Tournament not found")
     db.delete(t)
     db.commit()
@@ -532,8 +531,8 @@ def transition_status(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Move tournament to the next lifecycle phase."""
-    t = _check_tournament_access(tournament_id, user, db)
+    """Move tournament to the next lifecycle phase. Danger zone — admin only."""
+    t = _check_tournament_access(tournament_id, user, db, min_role=ROLE_ADMIN)
 
     if target_status not in TOURNAMENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status: {target_status}")
@@ -601,7 +600,7 @@ def generate_fixtures(
         )
 
     t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    _check_org_access(t.org_id, user, db)
+    ensure_role(t, user, db)
 
     engine = get_sport_engine(event.sport_key)
     is_team_event = event.participant_type in ("team", "doubles_pair")
@@ -958,7 +957,7 @@ def generate_groups(
         raise HTTPException(status_code=400, detail="num_groups must be at least 2")
 
     t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    _check_org_access(t.org_id, user, db)
+    ensure_role(t, user, db)
 
     is_team_event = event.participant_type in ("team", "doubles_pair")
     engine = get_sport_engine(event.sport_key)
@@ -1108,7 +1107,7 @@ def generate_group_matches(
         raise HTTPException(status_code=404, detail="Event not found")
 
     t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    _check_org_access(t.org_id, user, db)
+    ensure_role(t, user, db)
 
     is_team_event = event.participant_type in ("team", "doubles_pair")
     engine        = get_sport_engine(event.sport_key)
@@ -1212,7 +1211,7 @@ def generate_knockout_from_groups(
         raise HTTPException(status_code=400, detail="qualifiers_per_group must be 1 or 2")
 
     t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    _check_org_access(t.org_id, user, db)
+    ensure_role(t, user, db)
 
     is_team_event = event.participant_type in ("team", "doubles_pair")
     engine = get_sport_engine(event.sport_key)
