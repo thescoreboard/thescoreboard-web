@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   getWorkspace,
   createPlayer, addPlayerToEvent, assignPlayerGroup, removePlayerFromEvent,
-  updateParticipantSeed,
+  updateParticipantSeed, setParticipantPaid,
   createGroup, generateFixtures, createMatch, generateGroupMatches,
   updateMatchStatus, updateScore, undoSet, rematchMatch, deleteMatch, walkoverMatch,
   getMe, clearToken, configureEvent, updateTournament, updateEvent,
@@ -21,6 +21,7 @@ import SponsorsSection      from "../../../components/organiser/SponsorsSection"
 import MembersSection       from "../../../components/organiser/MembersSection";
 import { MediaUpload }      from "../../../components/shared/MediaUpload";
 import TournamentBasicInfoSection from "../../../components/organiser/TournamentBasicInfoSection";
+import PaymentSettingsSection from "../../../components/organiser/PaymentSettingsSection";
 import SetupSection         from "../../../components/organiser/SetupSection";
 import DatePicker           from "../../../components/shared/DatePicker";
 import { SetupProgressHeader, SetupCreatedBanner, PublishCTA, LockedTabPlaceholder } from "../../../components/organiser/SetupProgressChrome";
@@ -193,6 +194,14 @@ export default function EventWorkspace() {
     try {
       await removePlayerFromEvent(currentEvent.event_id, playerId);
       loadData(); flash("Player removed.");
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  const handleSetPaid = async (epId, paid) => {
+    try {
+      await setParticipantPaid(currentEvent.event_id, epId, paid);
+      loadData(); loadTeams();
+      flash(paid ? "Marked as paid." : "Marked as awaiting review.");
     } catch (e) { flash("Error: " + e.message); }
   };
 
@@ -614,11 +623,6 @@ export default function EventWorkspace() {
               return (
                 <>
                   <div style={fieldStyle}>
-                    <label style={labelStyle}>Entry Fee <span style={{ color: "var(--muted)", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>(optional)</span></label>
-                    <input style={inputStyle} value={contact.entry_fee} placeholder="e.g. ₹3,000 per team"
-                      onChange={e => setContact(c => ({ ...c, entry_fee: e.target.value }))} />
-                  </div>
-                  <div style={fieldStyle}>
                     <label style={labelStyle}>Registration Deadline</label>
                     <DatePicker value={contact.reg_deadline} onChange={val => setContact(c => ({ ...c, reg_deadline: val }))} placeholder="Pick a date" />
                   </div>
@@ -707,6 +711,8 @@ export default function EventWorkspace() {
 
               <RulesSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
                 defaultOpen={!isSectionComplete(setupChecklist, "rules")} onSaved={loadData} flash={flash} />
+
+              <PaymentSettingsSection t={t} defaultOpen={false} onSaved={loadData} flash={flash} />
 
               <SetupSection icon="🎨" title="Branding" status="optional" defaultOpen={false}>
                 <div style={{ maxWidth: 240 }}>
@@ -962,6 +968,8 @@ export default function EventWorkspace() {
             onAssignGroup={handleAssignGroup}
             onRemovePlayer={handleRemovePlayer}
             onUpdateSeed={handleUpdateSeed}
+            onSetPaid={handleSetPaid}
+            paymentEnabled={t.payment_enabled}
             flash={flash}
           />
         )}
@@ -972,6 +980,8 @@ export default function EventWorkspace() {
             pairs={eventTeams}
             onAddPair={handleAddPair}
             onRemovePair={handleRemovePair}
+            onSetPaid={handleSetPaid}
+            paymentEnabled={t.payment_enabled}
             flash={flash}
             numGroups={numGroups}
             setNumGroups={setNumGroups}
@@ -985,6 +995,8 @@ export default function EventWorkspace() {
             teams={eventTeams}
             onAddTeam={handleAddTeam}
             onRemoveTeam={handleRemoveTeam}
+            onSetPaid={handleSetPaid}
+            paymentEnabled={t.payment_enabled}
             flash={flash}
           />
         )}

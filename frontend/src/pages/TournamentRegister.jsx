@@ -12,6 +12,7 @@ import {
 } from "../api/client";
 import GoogleSignInButton from "../components/auth/GoogleButton";
 import PageLoader from "../components/shared/PageLoader";
+import { MediaUpload } from "../components/shared/MediaUpload";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -63,11 +64,12 @@ const errBox = {
 };
 
 // ── Step indicator ────────────────────────────────────────────
-function StepBar({ step, needsAuth, isSingleEvent }) {
+function StepBar({ step, needsAuth, isSingleEvent, needsPayment }) {
   const base  = isSingleEvent
     ? ["profile", "form"]
     : ["profile", "select", "form"];
-  const order = needsAuth ? ["auth", ...base] : base;
+  const withPayment = needsPayment ? [...base, "payment"] : base;
+  const order = needsAuth ? ["auth", ...withPayment] : withPayment;
   const idx   = order.indexOf(step);
   return (
     <div style={{ display:"flex", alignItems:"center", gap:0, marginBottom:28 }}>
@@ -354,7 +356,7 @@ function SelectStep({ events, profile, onSelect }) {
 }
 
 // ── Step: Individual form ─────────────────────────────────────
-function IndividualFormStep({ event, tournament, profile, onSuccess, onBack }) {
+function IndividualFormStep({ event, tournament, profile, onSubmit, onBack }) {
   const [form, setForm] = useState({
     name:   profile?.name   || "",
     phone:  profile?.phone  || "",
@@ -369,12 +371,11 @@ function IndividualFormStep({ event, tournament, profile, onSuccess, onBack }) {
     if (!form.phone.trim()) return setError("Phone number is required.");
     setLoading(true); setError("");
     try {
-      await registerIndividual(tournament.tournament_id, {
+      await onSubmit({
         name: form.name.trim(), phone: form.phone.trim(),
         age: parseInt(form.age) || null, gender: form.gender,
         event_ids: [event.event_id],
       });
-      onSuccess(form.name.trim());
     } catch(e) { setError(e.message); } finally { setLoading(false); }
   };
 
@@ -415,7 +416,7 @@ function IndividualFormStep({ event, tournament, profile, onSuccess, onBack }) {
 }
 
 // ── Step: Doubles form ────────────────────────────────────────
-function DoublesFormStep({ event, tournament, profile, onSuccess, onBack }) {
+function DoublesFormStep({ event, tournament, profile, onSubmit, onBack }) {
   const isMixed = event.sport_config?.mixed;
   const [form, setForm] = useState({ p1: profile?.name || "", p2:"", phone: profile?.phone || "" });
   const [loading, setLoading] = useState(false);
@@ -428,7 +429,7 @@ function DoublesFormStep({ event, tournament, profile, onSuccess, onBack }) {
       return setError("Both players must be different people.");
     setLoading(true); setError("");
     try {
-      await registerPair(tournament.tournament_id, {
+      await onSubmit({
         name: `${form.p1.trim()} & ${form.p2.trim()}`,
         contact_phone: form.phone.trim() || "",
         sport_key: event.sport_key, event_id: event.event_id,
@@ -437,7 +438,6 @@ function DoublesFormStep({ event, tournament, profile, onSuccess, onBack }) {
           { name: form.p2.trim(), role: isMixed ? "female" : "player2" },
         ],
       });
-      onSuccess(`${form.p1.trim()} & ${form.p2.trim()}`);
     } catch(e) { setError(e.message); } finally { setLoading(false); }
   };
 
@@ -472,7 +472,7 @@ function DoublesFormStep({ event, tournament, profile, onSuccess, onBack }) {
 }
 
 // ── Step: Team form ───────────────────────────────────────────
-function TeamFormStep({ event, tournament, onSuccess, onBack }) {
+function TeamFormStep({ event, tournament, onSubmit, onBack }) {
   const cfg        = event.sport_config || {};
   const teamSize   = cfg.team_size   || 11;
   const subs       = cfg.substitutes || 0;
@@ -503,11 +503,10 @@ function TeamFormStep({ event, tournament, onSuccess, onBack }) {
     }));
     setLoading(true); setError("");
     try {
-      await registerTeam(tournament.tournament_id, {
+      await onSubmit({
         name: teamName.trim(), contact_phone: phone.trim(),
         sport_key: event.sport_key, event_ids: [event.event_id], members: valid,
       });
-      onSuccess(teamName.trim());
     } catch(e) { setError(e.message); } finally { setLoading(false); }
   };
 
@@ -581,11 +580,98 @@ function FormHeader({ event, subtitle, onBack }) {
 }
 
 // ── Step: Registration form dispatcher ────────────────────────
-function FormStep({ event, tournament, profile, onSuccess, onBack }) {
+// onSubmit(payload, registerFn) — the parent decides whether to register
+// immediately or hold the payload for a payment step first.
+function FormStep({ event, tournament, profile, onSubmit, onBack }) {
   const mode = getRegMode(event);
-  if (mode === "team")    return <TeamFormStep    event={event} tournament={tournament} onSuccess={onSuccess} onBack={onBack} />;
-  if (mode === "doubles") return <DoublesFormStep event={event} tournament={tournament} profile={profile} onSuccess={onSuccess} onBack={onBack} />;
-  return <IndividualFormStep event={event} tournament={tournament} profile={profile} onSuccess={onSuccess} onBack={onBack} />;
+  if (mode === "team")    return <TeamFormStep    event={event} tournament={tournament} onSubmit={p => onSubmit(p, registerTeam)} onBack={onBack} />;
+  if (mode === "doubles") return <DoublesFormStep event={event} tournament={tournament} profile={profile} onSubmit={p => onSubmit(p, registerPair)} onBack={onBack} />;
+  return <IndividualFormStep event={event} tournament={tournament} profile={profile} onSubmit={p => onSubmit(p, registerIndividual)} onBack={onBack} />;
+}
+
+// ── Step: Payment ──────────────────────────────────────────────
+// Shown only when the tournament has payment collection configured.
+// The registration itself hasn't happened yet — `pendingReg` holds the
+// form payload + which register function to call. It's submitted here
+// once the player attaches proof of payment.
+function PaymentStep({ tournament, pendingReg, onSuccess, onBack }) {
+  const [screenshotUrl, setScreenshotUrl] = useState(null);
+  const [submitting,    setSubmitting]    = useState(false);
+  const [error,         setError]         = useState("");
+
+  const complete = async () => {
+    if (!screenshotUrl) return setError("Please upload your payment screenshot.");
+    setSubmitting(true); setError("");
+    try {
+      await pendingReg.registerFn(tournament.tournament_id, {
+        ...pendingReg.payload,
+        payment_screenshot_url: screenshotUrl,
+      });
+      onSuccess(pendingReg.payload.name);
+    } catch(e) { setError(e.message); } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontFamily:"var(--font-display)", fontSize:18, fontWeight:900, textTransform:"uppercase", letterSpacing:-0.5, color:"var(--ink)", marginBottom:6 }}>
+          Complete Payment
+        </div>
+        <div style={{ fontSize:13, color:"var(--muted)", lineHeight:1.5 }}>
+          Pay the entry fee below, then upload a screenshot as proof. The organiser will
+          confirm it before you're included in the draw.
+        </div>
+      </div>
+
+      <div style={{ background:"var(--elevated)", border:"1px solid var(--border)", borderRadius:14, padding:"24px 20px", marginBottom:20, textAlign:"center" }}>
+        <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:1, color:"var(--muted)", marginBottom:4 }}>
+          Amount to Pay
+        </div>
+        <div style={{ fontFamily:"var(--font-display)", fontSize:32, fontWeight:900, color:"var(--ink)" }}>
+          ₹{tournament.payment_amount}
+        </div>
+
+        {tournament.payment_qr_url && (
+          <img src={tournament.payment_qr_url} alt="Payment QR code" style={{
+            width:190, height:190, objectFit:"contain", margin:"18px auto 4px",
+            display:"block", background:"#fff", borderRadius:10, padding:10,
+            border:"1px solid var(--border)",
+          }} />
+        )}
+
+        {tournament.payment_upi_id && (
+          <div style={{ marginTop:14 }}>
+            <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:1, color:"var(--muted)", marginBottom:4 }}>
+              UPI ID
+            </div>
+            <div style={{ fontFamily:"monospace", fontSize:16, fontWeight:700, color:"var(--ink)" }}>
+              {tournament.payment_upi_id}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom:20 }}>
+        <label style={labelSt}>Payment Screenshot *</label>
+        <MediaUpload
+          bucket="team-banners"
+          resourceType="payments/screenshots"
+          resourceId={tournament.tournament_id}
+          onUploaded={setScreenshotUrl}
+        />
+      </div>
+
+      {error && <div style={errBox}>{error}</div>}
+
+      <button onClick={complete} disabled={submitting || !screenshotUrl}
+        style={{ ...btnPrimary, opacity: (submitting || !screenshotUrl) ? 0.6 : 1 }}>
+        {submitting ? "Submitting…" : "Complete Registration →"}
+      </button>
+      <button onClick={onBack} style={{ ...btnPrimary, marginTop:10, background:"none", color:"var(--muted)", border:"1px solid var(--border)" }}>
+        ← Back
+      </button>
+    </div>
+  );
 }
 
 // ── Step: Success ─────────────────────────────────────────────
@@ -624,6 +710,21 @@ export default function TournamentRegister() {
   const [profile,     setProfile]     = useState(null);
   const [selEvent,    setSelEvent]    = useState(null);
   const [regName,     setRegName]     = useState("");
+  const [pendingReg,  setPendingReg]  = useState(null); // { payload, registerFn } while awaiting payment
+
+  // Submits the registration form. If the tournament collects payment,
+  // hold the payload and move to the payment step instead of registering
+  // immediately — the actual API call happens once a screenshot is attached.
+  const handleFormSubmit = async (payload, registerFn) => {
+    if (tournament?.payment_enabled) {
+      setPendingReg({ payload, registerFn });
+      setStep("payment");
+      return;
+    }
+    await registerFn(tournament.tournament_id, payload);
+    setRegName(payload.name);
+    setStep("success");
+  };
 
   // Derived: open events & single-event shortcut flag
   const openEvents    = events.filter(ev => ev.is_configured !== false);
@@ -704,7 +805,12 @@ export default function TournamentRegister() {
       <TournamentBar tournament={tournament} slug={slug} navigate={navigate} />
 
       <div style={{ maxWidth:480, margin:"0 auto", padding:"28px 20px 48px" }}>
-        {showBar && <StepBar step={step} needsAuth={!isLoggedIn()} isSingleEvent={isSingleEvent} />}
+        {showBar && (
+          <StepBar
+            step={step} needsAuth={!isLoggedIn()} isSingleEvent={isSingleEvent}
+            needsPayment={tournament?.payment_enabled}
+          />
+        )}
 
         {step === "auth"    && <AuthStep onDone={afterAuth} />}
         {step === "profile" && (
@@ -719,12 +825,20 @@ export default function TournamentRegister() {
             event={selEvent}
             tournament={tournament}
             profile={profile}
-            onSuccess={n => { setRegName(n); setStep("success"); }}
+            onSubmit={handleFormSubmit}
             onBack={() => {
               setSelEvent(null);
               // Single-event: no select step to go back to — go to profile instead
               setStep(isSingleEvent ? "profile" : "select");
             }}
+          />
+        )}
+        {step === "payment" && pendingReg && (
+          <PaymentStep
+            tournament={tournament}
+            pendingReg={pendingReg}
+            onSuccess={n => { setRegName(n); setPendingReg(null); setStep("success"); }}
+            onBack={() => { setPendingReg(null); setStep("form"); }}
           />
         )}
         {step === "success" && <SuccessStep name={regName} event={selEvent} slug={slug} navigate={navigate} />}

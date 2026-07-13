@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, distinct, or_
 from typing import Optional, List
+from datetime import datetime, timezone
 import time
 
 from app.database import get_db
@@ -89,6 +90,7 @@ class PublicRegistration(BaseModel):
     age:       Optional[int] = None
     gender:    Optional[str] = "Male"
     event_ids: List[int]     = []
+    payment_screenshot_url: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -634,6 +636,10 @@ def _build_tournament_page_data(slug: str, db: Session) -> dict:
             "venue_lng":       tournament.venue_lng,
             "tournament_info": tournament.tournament_info,
             "org_name":        tournament.organization.name if tournament.organization else None,
+            "payment_enabled": tournament.payment_enabled,
+            "payment_amount":  tournament.payment_amount,
+            "payment_upi_id":  tournament.payment_upi_id,
+            "payment_qr_url":  tournament.payment_qr_url,
             "sponsors": [
                 {
                     "sponsor_id":  s.sponsor_id,
@@ -786,6 +792,10 @@ def get_tournament_by_sport(
             "tournament_info": tournament.tournament_info,
             "end_date":        str(tournament.end_date) if tournament.end_date else None,
             "org_name":        tournament.organization.name if tournament.organization else None,
+            "payment_enabled": tournament.payment_enabled,
+            "payment_amount":  tournament.payment_amount,
+            "payment_upi_id":  tournament.payment_upi_id,
+            "payment_qr_url":  tournament.payment_qr_url,
             "sponsors": [
                 {
                     "sponsor_id":  s.sponsor_id,
@@ -851,6 +861,12 @@ def public_register(
             detail="This tournament is not currently accepting registrations",
         )
 
+    if tournament.payment_enabled and not data.payment_screenshot_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment screenshot is required to complete registration.",
+        )
+
     # Look up existing player by phone within this org only.
     # We scope to org_id to avoid matching a phone that belongs to a different org's player.
     player = None
@@ -882,6 +898,11 @@ def public_register(
     if not target_events:
         raise HTTPException(status_code=400, detail="No valid events found for the given event_ids.")
 
+    if tournament.payment_enabled:
+        pay_status, pay_url, pay_submitted = "pending", data.payment_screenshot_url, datetime.now(timezone.utc)
+    else:
+        pay_status, pay_url, pay_submitted = "not_required", None, None
+
     enrolled = []
     for event in target_events:
         already = db.query(EventParticipant).filter(
@@ -895,6 +916,9 @@ def public_register(
             player_id=player.player_id,
             group_id=None,
             seed=None,
+            payment_status=pay_status,
+            payment_screenshot_url=pay_url,
+            payment_submitted_at=pay_submitted,
         ))
         enrolled.append(event.event_id)
 

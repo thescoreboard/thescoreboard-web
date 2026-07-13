@@ -9,6 +9,7 @@ import { MediaUpload } from "../../../components/shared/MediaUpload";
 import SponsorsSection from "../../../components/organiser/SponsorsSection";
 import MembersSection from "../../../components/organiser/MembersSection";
 import TournamentBasicInfoSection from "../../../components/organiser/TournamentBasicInfoSection";
+import PaymentSettingsSection from "../../../components/organiser/PaymentSettingsSection";
 import SetupSection from "../../../components/organiser/SetupSection";
 import DatePicker from "../../../components/shared/DatePicker";
 import { SetupProgressHeader, SetupCreatedBanner, PublishCTA } from "../../../components/organiser/SetupProgressChrome";
@@ -148,11 +149,6 @@ export default function TournamentOverview() {
       return (
         <>
           <div style={fieldStyle}>
-            <label style={labelStyle}>Entry Fee <span style={{ color: "var(--muted)", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>(optional)</span></label>
-            <input style={inputStyle} value={contact.entry_fee} placeholder="e.g. ₹3,000 per team"
-              onChange={e => setContact(c => ({ ...c, entry_fee: e.target.value }))} />
-          </div>
-          <div style={fieldStyle}>
             <label style={labelStyle}>Registration Deadline</label>
             <DatePicker value={contact.reg_deadline} onChange={val => setContact(c => ({ ...c, reg_deadline: val }))} placeholder="Pick a date" />
           </div>
@@ -199,6 +195,8 @@ export default function TournamentOverview() {
 
       <RulesSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
         defaultOpen={!isSectionComplete(setupChecklist, "rules")} onSaved={loadData} flash={flash} />
+
+      <PaymentSettingsSection t={t} defaultOpen={false} onSaved={loadData} flash={flash} />
 
       <SetupSection icon="🎨" title="Branding" status="optional" defaultOpen={false}>
         <div style={{ position: "relative" }}>

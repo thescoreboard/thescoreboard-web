@@ -58,6 +58,14 @@ class Tournament(Base):
     # Info & Rules sections (JSON dict keyed by section name)
     tournament_info = Column(JSON, nullable=True)
 
+    # Payment collection — one shared config for the whole tournament.
+    # payment_amount is in whole rupees. Collection is considered "enabled"
+    # only once the organiser has set both an amount and a way to pay
+    # (UPI ID and/or QR code) — see `payment_enabled` below.
+    payment_amount  = Column(Integer, nullable=True)
+    payment_upi_id  = Column(String(100), nullable=True)
+    payment_qr_url  = Column(String(500), nullable=True)
+
     # Lifecycle: draft → live → completed
     status = Column(String(50), default="draft", nullable=False, index=True)
     is_active = Column(Boolean, default=True, index=True)
@@ -88,6 +96,12 @@ class Tournament(Base):
         if self.registration_end_date and today > self.registration_end_date:
             return False
         return True
+
+    @property
+    def payment_enabled(self) -> bool:
+        """True when the organiser has configured payment collection: an
+        entry fee plus at least one way to pay (UPI ID or QR code)."""
+        return bool(self.payment_amount and (self.payment_upi_id or self.payment_qr_url))
 
 
 class Sponsor(Base):

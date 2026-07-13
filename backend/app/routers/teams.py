@@ -5,6 +5,7 @@ Used by both organisers (admin panel) and public team registration.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
+from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from app.database import get_db
@@ -226,6 +227,8 @@ def get_event_teams(event_id: int, db: Session = Depends(get_db)):
             "ep_id":    ep.ep_id,
             "group_id": ep.group_id,
             "team":     _serialize_team(ep.team) if ep.team else None,
+            "payment_status":         ep.payment_status,
+            "payment_screenshot_url": ep.payment_screenshot_url,
         }
         for ep in eps
     ]
@@ -245,6 +248,7 @@ class PublicTeamRegistration(BaseModel):
     event_id:      Optional[int] = None   # singular — doubles form
     event_ids:     List[int]     = []     # plural   — team form
     members:       List[TeamMemberIn]
+    payment_screenshot_url: Optional[str] = None
 
 
 @router.post("/public/tournaments/{tournament_id}/register-team",
@@ -266,6 +270,12 @@ def public_register_team(
         raise HTTPException(status_code=404, detail="Tournament not found")
     if not tournament.registration_open:
         raise HTTPException(status_code=400, detail="Tournament is not accepting registrations")
+
+    if tournament.payment_enabled and not data.payment_screenshot_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment screenshot is required to complete registration.",
+        )
 
     # ── Normalise name (doubles sends "name", teams send "team_name")
     team_display_name = (data.name or data.team_name or "").strip()
@@ -336,6 +346,11 @@ def public_register_team(
             ))
 
     # ── Enrol in target events
+    if tournament.payment_enabled:
+        pay_status, pay_url, pay_submitted = "pending", data.payment_screenshot_url, datetime.now(timezone.utc)
+    else:
+        pay_status, pay_url, pay_submitted = "not_required", None, None
+
     enrolled = []
     for event in target_events:
         already = db.query(EventParticipant).filter(
@@ -344,7 +359,12 @@ def public_register_team(
         ).first()
         if already:
             continue
-        db.add(EventParticipant(event_id=event.event_id, team_id=team.team_id))
+        db.add(EventParticipant(
+            event_id=event.event_id, team_id=team.team_id,
+            payment_status=pay_status,
+            payment_screenshot_url=pay_url,
+            payment_submitted_at=pay_submitted,
+        ))
         enrolled.append(event.event_id)
 
     db.commit()

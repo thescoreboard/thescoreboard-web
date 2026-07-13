@@ -4,6 +4,7 @@ Tournament routes — create wizard, workspace data, lifecycle management.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List
+from datetime import datetime, timezone
 
 from app.database import get_db
 from app.models.user import User
@@ -17,7 +18,7 @@ from app.schemas.tournament import TournamentCreate, TournamentUpdate, Tournamen
 from app.utils.auth import get_current_user
 from app.utils.slug import generate_unique_slug
 from app.utils.tournament_access import (
-    require_tournament_access, require_org_access, ensure_role,
+    require_tournament_access, require_org_access, require_event_access, ensure_role,
     ROLE_ADMIN, ROLE_STAFF,
 )
 from app.sports.registry import get_sport_engine
@@ -360,6 +361,10 @@ def get_workspace(
             "primary_color":  t.primary_color,
             "is_published":     t.is_published,
             "tournament_info":  t.tournament_info,
+            "payment_amount":   t.payment_amount,
+            "payment_upi_id":   t.payment_upi_id,
+            "payment_qr_url":   t.payment_qr_url,
+            "payment_enabled":  t.payment_enabled,
             "poster_url":       t.poster_url or getattr(t, "banner_url", None),
             "logo_url":       t.logo_url,
             "sponsors": [
@@ -388,6 +393,10 @@ def get_workspace(
 
 
 def _serialize_participant(ep: EventParticipant, is_team: bool) -> dict:
+    payment = {
+        "payment_status":         ep.payment_status,
+        "payment_screenshot_url": ep.payment_screenshot_url,
+    }
     if is_team and ep.team:
         return {
             "ep_id":    ep.ep_id,
@@ -395,6 +404,7 @@ def _serialize_participant(ep: EventParticipant, is_team: bool) -> dict:
             "name":     ep.team.name,
             "seed":     ep.seed,
             "group_id": ep.group_id,
+            **payment,
         }
     elif ep.player:
         return {
@@ -406,8 +416,47 @@ def _serialize_participant(ep: EventParticipant, is_team: bool) -> dict:
             "seed":       ep.seed,
             "seed_level": ep.player.seed_level,
             "group_id":   ep.group_id,
+            **payment,
         }
-    return {"ep_id": ep.ep_id, "name": "Unknown", "seed": ep.seed, "seed_level": None, "group_id": ep.group_id}
+    return {"ep_id": ep.ep_id, "name": "Unknown", "seed": ep.seed, "seed_level": None, "group_id": ep.group_id, **payment}
+
+
+# ── Payment review ─────────────────────────────────────────────
+
+@router.patch("/events/{event_id}/participants/{ep_id}/payment")
+def set_participant_paid(
+    event_id: int,
+    ep_id: int,
+    paid: bool,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Organiser marks a registration as paid (or reverts it back to pending)
+    after reviewing the uploaded payment screenshot. Only registrations with
+    payment collection enabled (payment_status != "not_required") can be
+    toggled — nothing to review otherwise."""
+    require_event_access(event_id, user, db)
+
+    ep = db.query(EventParticipant).filter(
+        EventParticipant.event_id == event_id,
+        EventParticipant.ep_id == ep_id,
+    ).first()
+    if not ep:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    if ep.payment_status == "not_required":
+        raise HTTPException(status_code=400, detail="This registration has no payment to review")
+
+    if paid:
+        ep.payment_status = "paid"
+        ep.payment_confirmed_at = datetime.now(timezone.utc)
+        ep.payment_confirmed_by = user.user_id
+    else:
+        ep.payment_status = "pending"
+        ep.payment_confirmed_at = None
+        ep.payment_confirmed_by = None
+
+    db.commit()
+    return {"ok": True, "payment_status": ep.payment_status}
 
 
 # ── Update tournament ─────────────────────────────────────────
@@ -648,9 +697,13 @@ def generate_fixtures(
         return match
 
     # ── Helper: get all participant IDs for this event ────────
+    # Only registrations that are paid (or never required payment) are
+    # eligible for fixtures — unpaid registrations sit out until the
+    # organiser confirms their payment screenshot.
     def _get_all_ids():
         eps = db.query(EventParticipant).filter(
-            EventParticipant.event_id == event_id
+            EventParticipant.event_id == event_id,
+            EventParticipant.payment_status.in_(["not_required", "paid"]),
         ).all()
         if is_team_event:
             return [ep.team_id for ep in eps if ep.team_id]
@@ -987,8 +1040,12 @@ def generate_groups(
             detail="Cannot regenerate groups — knockout bracket already generated.",
         )
 
-    # Collect all enrolled participants
-    eps = db.query(EventParticipant).filter(EventParticipant.event_id == event_id).all()
+    # Collect all enrolled participants — only paid (or payment-not-required)
+    # registrations are eligible; unpaid ones sit out until confirmed.
+    eps = db.query(EventParticipant).filter(
+        EventParticipant.event_id == event_id,
+        EventParticipant.payment_status.in_(["not_required", "paid"]),
+    ).all()
     if len(eps) < num_groups * 2:
         raise HTTPException(
             status_code=400,

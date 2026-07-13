@@ -30,10 +30,17 @@ async def upload_media(
 
     Sponsor logos (path starts with "sponsors/") are free-plan — sponsor
     management itself isn't Pro-gated, so a sponsor's logo shouldn't be
-    either. Tournament branding (posters/logos/team banners) stays Pro-only.
+    either. Payment screenshots/QR codes (path starts with "payments/")
+    are free-plan too — collecting entry fees isn't a Pro feature, and the
+    screenshot is uploaded by the registering player, not the organiser.
+    Tournament logos (bucket "logos", path starts with "tournaments/") are
+    free-plan too. Banners/posters and team banners stay Pro-only.
     """
-    is_sponsor_logo = bool(path) and path.startswith("sponsors/")
-    if not is_sponsor_logo and current_user.plan != "pro":
+    is_free_upload = bool(path) and (
+        path.startswith("sponsors/") or path.startswith("payments/") or
+        (bucket == "logos" and path.startswith("tournaments/"))
+    )
+    if not is_free_upload and current_user.plan != "pro":
         raise HTTPException(status_code=403, detail="pro_required")
 
     if bucket not in storage.VALID_BUCKETS:

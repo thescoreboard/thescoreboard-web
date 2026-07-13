@@ -131,6 +131,8 @@ export const generateFixtures = (eId, thirdPlace = false) =>
 export const generateGroupMatches = (eId) =>
   request("POST", `/events/${eId}/generate-group-matches`);
 export const getStandings = (eId) => request("GET", `/orgs/events/${eId}/standings`);
+export const setParticipantPaid = (eId, epId, paid) =>
+  request("PATCH", `/orgs/events/${eId}/participants/${epId}/payment?paid=${paid}`);
 
 // Players
 export const createPlayer = (d, orgId) => request("POST", `/players/${orgId ? `?org_id=${orgId}` : ""}`, d);
