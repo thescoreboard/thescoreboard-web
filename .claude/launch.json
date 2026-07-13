@@ -9,6 +9,13 @@
       "port": 8000
     },
     {
+      "name": "backend-preview",
+      "runtimeExecutable": "venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8010"],
+      "cwd": "backend",
+      "port": 8010
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
@@ -21,6 +28,13 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "5199", "--strictPort"],
       "cwd": "frontend",
       "port": 5199
+    },
+    {
+      "name": "frontend-preview2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "frontend",
+      "autoPort": true
     }
   ]
 }

@@ -22,6 +22,7 @@ from app.models.player import Player, Team
 from app.models.tournament import Tournament
 from app.schemas.match import MatchCreate, MatchOut, MatchStatusUpdate
 from app.utils.auth import get_current_user, get_current_user_id
+from app.utils.tournament_access import ensure_role
 from app.sports.registry import get_sport_engine
 
 router = APIRouter()
@@ -80,22 +81,16 @@ def _load_match(match_id: int, db: Session) -> Match:
 
 def _check_event_access(event: Event, user: User, db: Session) -> None:
     """
-    Only members of the organization that owns the tournament (or superadmins)
-    may modify matches. Every mutating match endpoint must call this — a valid
-    JWT alone is NOT enough (any registered player would qualify otherwise).
+    Only people with access to the owning tournament (org members, tournament
+    members, or superadmins) may modify matches. Every mutating match endpoint
+    must call this — a valid JWT alone is NOT enough (any registered player
+    would qualify otherwise). Scoring is staff-level.
     """
-    if user.is_superadmin:
-        return
-    org_id = (
-        db.query(Tournament.org_id)
-        .filter(Tournament.tournament_id == event.tournament_id)
-        .scalar()
-    )
-    member = db.query(OrgMember).filter(
-        OrgMember.org_id == org_id, OrgMember.user_id == user.user_id
-    ).first()
-    if not member:
-        raise HTTPException(status_code=403, detail="Not authorized for this tournament")
+    t = db.query(Tournament).filter(
+        Tournament.tournament_id == event.tournament_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    ensure_role(t, user, db)
 
 
 def _serialize_match(m: Match) -> dict:

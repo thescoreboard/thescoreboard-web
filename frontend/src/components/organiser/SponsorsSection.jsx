@@ -12,7 +12,7 @@ const TIERS = [
 
 const TIER_META = Object.fromEntries(TIERS.map(t => [t.value, t]));
 
-const BLANK = { name: "", tier: "partner", website: "", contact_phone: "", description: "", logo_url: "" };
+const BLANK = { name: "", tier: "partner", website: "", contact_phone: "", contact_email: "", description: "", logo_url: "" };
 
 export default function SponsorsSection({ tournamentId, sponsors = [], onRefresh, flash }) {
   const [showForm, setShowForm]   = useState(false);
@@ -26,6 +26,7 @@ export default function SponsorsSection({ tournamentId, sponsors = [], onRefresh
     setForm({
       name: s.name, tier: s.tier,
       website: s.website || "", contact_phone: s.contact_phone || "",
+      contact_email: s.contact_email || "",
       description: s.description || "", logo_url: s.logo_url || "",
     });
     setEditing(s.sponsor_id);
@@ -43,6 +44,7 @@ export default function SponsorsSection({ tournamentId, sponsors = [], onRefresh
         logo_url:      form.logo_url      || null,
         website:       form.website.trim()       || null,
         contact_phone: form.contact_phone.trim() || null,
+        contact_email: form.contact_email.trim() || null,
         description:   form.description.trim()   || null,
       };
       if (editing) {
@@ -122,9 +124,10 @@ export default function SponsorsSection({ tournamentId, sponsors = [], onRefresh
                         {s.description}
                       </div>
                     )}
-                    {(s.contact_phone || s.website) && (
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, display: "flex", gap: 10 }}>
+                    {(s.contact_phone || s.contact_email || s.website) && (
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, display: "flex", gap: 10, flexWrap: "wrap" }}>
                         {s.contact_phone && <span>📞 {s.contact_phone}</span>}
+                        {s.contact_email && <span>✉️ {s.contact_email}</span>}
                         {s.website && <span>🔗 {s.website}</span>}
                       </div>
                     )}
@@ -209,11 +212,18 @@ export default function SponsorsSection({ tournamentId, sponsors = [], onRefresh
                 value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} />
             </div>
 
-            {/* Contact phone */}
-            <div className="field">
-              <label>Contact Number</label>
-              <input className="input" placeholder="+91 98765 43210"
-                value={form.contact_phone} onChange={e => setForm(f => ({ ...f, contact_phone: e.target.value }))} />
+            {/* Contact phone + email */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="field">
+                <label>Contact Number</label>
+                <input className="input" placeholder="+91 98765 43210"
+                  value={form.contact_phone} onChange={e => setForm(f => ({ ...f, contact_phone: e.target.value }))} />
+              </div>
+              <div className="field">
+                <label>Contact Email</label>
+                <input className="input" type="email" placeholder="contact@sponsor.com"
+                  value={form.contact_email} onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))} />
+              </div>
             </div>
 
             {/* Description */}

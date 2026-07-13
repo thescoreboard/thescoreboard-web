@@ -6,11 +6,55 @@ import {
 } from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
 
+// Eye / eye-off icons for the password visibility toggle
+function EyeIcon({ off }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {off ? (
+        <>
+          <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-5.05 0-9.29-3.14-11-8 .69-1.94 1.85-3.68 3.34-5.06M9.9 4.24A10.94 10.94 0 0 1 12 4c5.05 0 9.29 3.14 11 8-.53 1.5-1.35 2.86-2.4 4.02M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </>
+      ) : (
+        <>
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+// Password input with a show/hide eye toggle button
+function PasswordField({ value, onChange, placeholder, onKeyDown, inputStyle }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <input className="input" type={visible ? "text" : "password"} placeholder={placeholder}
+        value={value} onChange={onChange} onKeyDown={onKeyDown}
+        style={{ ...inputStyle, paddingRight: 40 }} />
+      <button type="button" onClick={() => setVisible(v => !v)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        style={{
+          position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+          background: "none", border: "none", cursor: "pointer", padding: 4,
+          display: "flex", alignItems: "center", color: "var(--muted)",
+        }}>
+        <EyeIcon off={visible} />
+      </button>
+    </div>
+  );
+}
+
 export default function Register() {
   const navigate = useNavigate();
   const [form,    setForm]    = useState({ name: "", email: "", password: "", phone: "" });
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
+
+  const passwordsMatch = confirmPassword.length > 0 && form.password === confirmPassword;
+  const passwordsMismatch = confirmPassword.length > 0 && form.password !== confirmPassword;
 
   /**
    * New accounts have no org yet → roles = ["player"].
@@ -33,6 +77,8 @@ export default function Register() {
       return setError("Name, email and password are required.");
     if (form.password.length < 6)
       return setError("Password must be at least 6 characters.");
+    if (form.password !== confirmPassword)
+      return setError("Passwords do not match.");
     setLoading(true); setError("");
     try {
       const data = await register(form);
@@ -92,9 +138,37 @@ export default function Register() {
         </div>
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>Password *</label>
-          <input className="input" type="password" placeholder="Min 6 characters"
-            value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-            onKeyDown={e => e.key === "Enter" && handleSubmit()} style={inputStyle} />
+          <PasswordField
+            value={form.password}
+            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+            onKeyDown={e => e.key === "Enter" && handleSubmit()}
+            placeholder="Min 6 characters"
+            inputStyle={inputStyle}
+          />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Re-enter Password *</label>
+          <PasswordField
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSubmit()}
+            placeholder="Re-enter your password"
+            inputStyle={{
+              ...inputStyle,
+              ...(passwordsMismatch && { borderColor: "var(--red)" }),
+              ...(passwordsMatch && { borderColor: "var(--green)" }),
+            }}
+          />
+          {passwordsMatch && (
+            <div style={{ fontSize: 12, color: "var(--green)", marginTop: 6, fontWeight: 600 }}>
+              ✓ Passwords match
+            </div>
+          )}
+          {passwordsMismatch && (
+            <div style={{ fontSize: 12, color: "var(--red)", marginTop: 6, fontWeight: 600 }}>
+              Passwords do not match
+            </div>
+          )}
         </div>
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Phone (optional)</label>
@@ -117,8 +191,13 @@ export default function Register() {
         </p>
 
         <button className="btn btn-gradient btn-lg"
-          style={{ width: "100%", marginTop: 0, background: "var(--primary)", color: "#FFF", padding: "14px", borderRadius: "8px", border: "none", fontWeight: "bold", cursor: "pointer" }}
-          onClick={handleSubmit} disabled={loading}>
+          style={{
+            width: "100%", marginTop: 0, background: "var(--primary)", color: "#FFF",
+            padding: "14px", borderRadius: "8px", border: "none", fontWeight: "bold",
+            cursor: loading || !passwordsMatch ? "not-allowed" : "pointer",
+            opacity: loading || !passwordsMatch ? 0.6 : 1,
+          }}
+          onClick={handleSubmit} disabled={loading || !passwordsMatch}>
           {loading ? "Creating account…" : "Create Account →"}
         </button>
 

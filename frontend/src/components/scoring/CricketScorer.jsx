@@ -19,6 +19,8 @@
  *   onClose  – () → void
  */
 import { useState, useEffect } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { ReadyScreen } from "./MobileScorerKit";
 
 const DISMISSALS = [
   { key: "b",   label: "Bowled",          desc: "Stumps hit by ball" },
@@ -81,6 +83,7 @@ function EmptySlot() {
 }
 
 export default function CricketScorer({ match, config, onScore, onFinish, onGoLive, onPause, onReset, onClose }) {
+  const isMobile = useIsMobile();
   const ls      = match.live_state || {};
   const sets    = (match.sets || []).slice().sort((a, b) => a.set_number - b.set_number);
   const isDone    = match.status === "done";
@@ -284,6 +287,17 @@ export default function CricketScorer({ match, config, onScore, onFinish, onGoLi
   };
 
   // ── PRE-LIVE SCREEN ──────────────────────────────────────
+  if (isPreLive && isMobile) {
+    return (
+      <ReadyScreen
+        accent={c.lime}
+        leftName={p1?.name || "Team 1"}
+        rightName={p2?.name || "Team 2"}
+        onGoLive={onGoLive}
+        onClose={onClose}
+      />
+    );
+  }
   if (isPreLive) {
     return (
       <div style={{ position:"fixed", inset:0, zIndex:9999, background:c.bg, display:"flex", flexDirection:"column", fontFamily:"'Space Grotesk',sans-serif" }}>

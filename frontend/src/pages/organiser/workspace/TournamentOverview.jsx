@@ -7,12 +7,16 @@ import SportSetupModal from "../../../components/organiser/SportSetupModal";
 import { ShareButton } from "../../../components/shared/ShareButton";
 import { MediaUpload } from "../../../components/shared/MediaUpload";
 import SponsorsSection from "../../../components/organiser/SponsorsSection";
-import TournamentInfoEditor from "../../../components/organiser/TournamentInfoEditor";
+import MembersSection from "../../../components/organiser/MembersSection";
+import TournamentBasicInfoSection from "../../../components/organiser/TournamentBasicInfoSection";
+import PaymentSettingsSection from "../../../components/organiser/PaymentSettingsSection";
+import SetupSection from "../../../components/organiser/SetupSection";
+import DatePicker from "../../../components/shared/DatePicker";
+import { SetupProgressHeader, SetupCreatedBanner, PublishCTA } from "../../../components/organiser/SetupProgressChrome";
+import { PrizePoolSection, RulesSection } from "../../../components/organiser/TournamentInfoEditor";
+import { getTournamentSetupChecklist, summarizeChecklist, isSectionComplete } from "../../../utils/tournamentCompleteness";
 
-const LIFECYCLE = ["draft", "registration", "fixtures", "live", "completed"];
-const LIFECYCLE_LABELS = {
-  draft: "Draft", registration: "Reg", fixtures: "Fixtures", live: "Live", completed: "Done",
-};
+const LIFECYCLE_LABELS = { draft: "Draft", live: "Live", completed: "Completed" };
 
 const SPORT_META = {
   table_tennis: { abbrev: "🏓", label: "Table Tennis", type: "individual" },
@@ -22,11 +26,9 @@ const SPORT_META = {
 };
 
 const STATUS_PILL = {
-  draft:        "pill-gray",
-  registration: "pill-gold",
-  fixtures:     "pill-orange",
-  live:         "pill-orange",
-  completed:    "pill-green",
+  draft:     "pill-gray",
+  live:      "pill-orange",
+  completed: "pill-green",
 };
 
 export default function TournamentOverview() {
@@ -36,6 +38,7 @@ export default function TournamentOverview() {
   const [user, setUser]           = useState(null);
   const [msg,  setMsg]            = useState("");
   const [setupTarget, setSetupTarget] = useState(null); // event being configured
+  const [setupBannerDismissed, setSetupBannerDismissed] = useState(false);
 
   const flash = (txt) => { setMsg(txt); setTimeout(() => setMsg(""), 3000); };
 
@@ -50,8 +53,27 @@ export default function TournamentOverview() {
   }, [loadData]);
 
   const handleTransition = async (status) => {
-    try { await transitionTournament(tournamentId, status); loadData(); flash(`Phase → ${status}`); }
-    catch (e) { flash("Error: " + e.message); }
+    try {
+      await transitionTournament(tournamentId, status);
+      loadData();
+      flash(
+        status === "live"      ? "Tournament published — it's now live!" :
+        status === "completed" ? "Tournament marked completed." :
+        "Tournament moved back to draft."
+      );
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  // "End Registration Now" reuses registration_end_date — setting it to
+  // yesterday closes registration immediately; editing the date again later
+  // reopens it. No separate manual-close flag needed.
+  const handleEndRegistrationNow = async () => {
+    try {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      await updateTournament(data.tournament.org_id, tournamentId, { registration_end_date: yesterday });
+      loadData();
+      flash("Registration closed.");
+    } catch (e) { flash("Error: " + e.message); }
   };
 
   const handleSetupComplete = (updatedEvent) => {
@@ -70,10 +92,17 @@ export default function TournamentOverview() {
     return null;
   }
 
-  const currentIdx = LIFECYCLE.indexOf(t.status);
-
   const unconfiguredCount = events.filter(ev => ev.is_configured === false).length;
   const allConfigured     = unconfiguredCount === 0;
+
+  const setupChecklist  = getTournamentSetupChecklist(t, allConfigured);
+  const setupSummary    = summarizeChecklist(setupChecklist);
+  const detailsComplete = setupSummary.complete;
+
+  // ── My role — gates the danger zone. Old backends don't send my_role;
+  // anyone with access then was an owner, so default to admin.
+  const myRole  = data.my_role || "admin";
+  const isAdmin = myRole === "admin";
 
   const handleEventCardClick = (ev) => {
     if (ev.is_configured === false) {
@@ -83,6 +112,165 @@ export default function TournamentOverview() {
       navigate(`/organiser/tournament/${tournamentId}/event/${ev.event_id}`);
     }
   };
+
+  const fullInfo = t.tournament_info || {};
+  const labelStyle = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", fontFamily: "var(--font-display)", marginBottom: 4, display: "block" };
+  const inputStyle = { background: "var(--elevated)", border: "1px solid var(--border-mid)", borderRadius: 6, padding: "7px 10px", fontSize: 13, color: "var(--ink)", width: "100%", outline: "none", fontFamily: "inherit" };
+  const fieldStyle = { marginBottom: 14 };
+
+  const sportsConfigExtra = {
+    statusSections: ["format"],
+    editableFields: () => (
+      <div style={{ ...fieldStyle, gridColumn: "1 / -1" }}>
+        <label style={labelStyle}>Sports Configuration</label>
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>
+          {allConfigured
+            ? "All sports in this tournament are configured."
+            : `${unconfiguredCount} sport${unconfiguredCount !== 1 ? "s" : ""} still need setup — click each sport card below to configure it.`}
+        </div>
+      </div>
+    ),
+  };
+
+  // Registration & Contact fields folded into Basic Info via `extra`
+  // instead of their own accordion block.
+  const contactExtra = {
+    statusSections: ["contact"],
+    initExtra: () => ({
+      contact: {
+        entry_fee:    fullInfo.contact?.entry_fee    || "",
+        reg_deadline: fullInfo.contact?.reg_deadline || "",
+        persons:      fullInfo.contact?.persons      || [],
+      },
+    }),
+    editableFields: (extraForm, setExtraForm) => {
+      const contact = extraForm.contact;
+      const setContact = (updater) => setExtraForm(f => ({ ...f, contact: updater(f.contact) }));
+      return (
+        <>
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Registration Deadline</label>
+            <DatePicker value={contact.reg_deadline} onChange={val => setContact(c => ({ ...c, reg_deadline: val }))} placeholder="Pick a date" />
+          </div>
+          <div style={{ ...fieldStyle, gridColumn: "1 / -1" }}>
+            <label style={labelStyle}>Contact Persons</label>
+            {contact.persons.map((p, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 8 }}>
+                <input style={inputStyle} placeholder="Name" value={p.name}
+                  onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x) }))} />
+                <input style={inputStyle} placeholder="Phone / WhatsApp" value={p.phone}
+                  onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, phone: e.target.value } : x) }))} />
+                <button className="btn btn-outline btn-sm" style={{ padding: "0 10px" }}
+                  onClick={() => setContact(c => ({ ...c, persons: c.persons.filter((_, idx) => idx !== i) }))}>×</button>
+              </div>
+            ))}
+            <button className="btn btn-outline btn-sm"
+              onClick={() => setContact(c => ({ ...c, persons: [...c.persons, { name: "", phone: "" }] }))}>
+              + Add Contact Person
+            </button>
+          </div>
+        </>
+      );
+    },
+    onSaveExtra: async (extraForm) => {
+      await updateTournament(t.org_id, t.tournament_id, { tournament_info: { ...fullInfo, contact: extraForm.contact } });
+    },
+  };
+
+  const setupSections = (
+    <>
+      <TournamentBasicInfoSection
+        t={t} checklist={setupChecklist}
+        defaultOpen={
+          !isSectionComplete(setupChecklist, "basic") ||
+          !isSectionComplete(setupChecklist, "format") ||
+          !isSectionComplete(setupChecklist, "contact")
+        }
+        onSaved={loadData} flash={flash}
+        extras={[sportsConfigExtra, contactExtra]}
+      />
+
+      <PrizePoolSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
+        defaultOpen={!isSectionComplete(setupChecklist, "prize")} onSaved={loadData} flash={flash} />
+
+      <RulesSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
+        defaultOpen={!isSectionComplete(setupChecklist, "rules")} onSaved={loadData} flash={flash} />
+
+      <PaymentSettingsSection t={t} defaultOpen={false} onSaved={loadData} flash={flash} />
+
+      <SetupSection icon="🎨" title="Branding" status="optional" defaultOpen={false}>
+        <div style={{ position: "relative" }}>
+          {user?.plan !== "pro" && (
+            <div style={{
+              position: "absolute", inset: 0, zIndex: 10, borderRadius: "inherit",
+              background: "var(--surface)", opacity: 0.92,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>
+              <span style={{ fontSize: 22 }}>🔒</span>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>Pro Feature</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 220 }}>
+                Custom banners &amp; logos require a Pro account.
+              </div>
+              <a href="mailto:hi@thescoreboard.in?subject=Upgrade to Pro" style={{
+                marginTop: 4, padding: "7px 18px", borderRadius: 8,
+                background: "#f59e0b", color: "#fff", fontFamily: "var(--font-display)",
+                fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1,
+                textDecoration: "none",
+              }}>
+                Upgrade →
+              </a>
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
+            Images are automatically cropped to the correct size before upload.
+          </div>
+
+          {/* Banner — full width, 16:9 */}
+          <MediaUpload
+            label="Banner"
+            hint="Any image · auto-cropped to 16:9 landscape · shown as hero on tournament page"
+            bucket="tournament-posters"
+            resourceType="tournaments"
+            resourceId={t.tournament_id}
+            filename="poster"
+            enforceAspect="16:9"
+            maxWidth={1920}
+            previewUrl={t.poster_url}
+            onUploaded={async (url) => {
+              try {
+                await updateTournament(t.org_id, t.tournament_id, { poster_url: url });
+                flash("Banner updated!");
+                loadData();
+              } catch (e) { flash("Error saving banner: " + e.message); }
+            }}
+          />
+
+          {/* Logo — square, shown as circle on public page */}
+          <div style={{ marginTop: 16, maxWidth: 180 }}>
+            <MediaUpload
+              label="Logo"
+              hint="Any image · auto-cropped to 1:1 · shown as circle over banner"
+              bucket="logos"
+              resourceType="tournaments"
+              resourceId={t.tournament_id}
+              filename="logo"
+              enforceAspect="1:1"
+              maxWidth={800}
+              previewUrl={t.logo_url}
+              previewStyle={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
+              onUploaded={async (url) => {
+                try {
+                  await updateTournament(t.org_id, t.tournament_id, { logo_url: url });
+                  flash("Logo updated!");
+                  loadData();
+                } catch (e) { flash("Error saving logo: " + e.message); }
+              }}
+            />
+          </div>
+        </div>
+      </SetupSection>
+    </>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
@@ -102,6 +290,47 @@ export default function TournamentOverview() {
       {msg && <div className="flash success">{msg}</div>}
 
       <div className="tournament-overview-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px" }}>
+
+        {/* ── Finish-setup banner + progress OR Get It Match-Ready checklist ── */}
+        {!detailsComplete ? (
+          <>
+            {!setupBannerDismissed && (
+              <SetupCreatedBanner onDismiss={() => setSetupBannerDismissed(true)} />
+            )}
+            <SetupProgressHeader doneCount={setupSummary.doneCount} totalCount={setupSummary.totalCount} percent={setupSummary.percent} />
+          </>
+        ) : (() => {
+          const checklist = [
+            { label: "Tournament created", done: true },
+            { label: "Registration open",  done: !!t.registration_open },
+            { label: "Add first fixtures", done: (stats.total_matches || 0) > 0 },
+          ];
+          const doneCount = checklist.filter(i => i.done).length;
+          return (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>
+                  Get It Match-Ready
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)" }}>{doneCount}/{checklist.length}</span>
+              </div>
+              {checklist.map(item => (
+                <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                  <span style={{
+                    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: item.done ? "var(--primary)" : "transparent",
+                    border: item.done ? "none" : "2px solid var(--border-mid)",
+                    color: "#fff", fontSize: 11, fontWeight: 900,
+                  }}>
+                    {item.done && "✓"}
+                  </span>
+                  <span style={{ fontSize: 13, color: item.done ? "var(--ink)" : "var(--muted)" }}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* ── TITLE ── */}
         <div style={{ marginBottom: 28 }}>
@@ -183,196 +412,112 @@ export default function TournamentOverview() {
           );
         })()}
 
-        {/* ── PHASE CONTROL ── */}
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-title">Tournament Phase</div>
+        {/* ── TOURNAMENT STATUS (unlocked once details are complete) ── */}
+        {detailsComplete && (
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-title">Tournament Status</div>
 
-          <div className="lifecycle-stepper" style={{ display: "flex", alignItems: "center", marginBottom: 16, overflowX: "auto" }}>
-            {LIFECYCLE.map((phase, i) => {
-              const state = i < currentIdx ? "done" : i === currentIdx ? "active" : "pending";
-              return (
-                <div key={phase} style={{ display: "flex", alignItems: "center", flex: 1 }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                    <div
-                      onClick={() => handleTransition(phase)}
-                      className="lifecycle-dot"
-                      style={{
-                        background: state === "pending" ? "var(--elevated)" : "var(--primary)",
-                        color:      state === "pending" ? "var(--subtle)"   : "var(--bg)",
-                        boxShadow:  state === "active"  ? "0 0 0 3px var(--primary-dim)" : "none",
-                        cursor: "pointer",
-                        width: 24, height: 24, borderRadius: "50%",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-                        border: state === "pending" ? "2px solid var(--border)" : "none",
-                        transition: "all .2s",
-                      }}
-                    >
-                      {state === "done" ? "✓" : i + 1}
-                    </div>
-                    <span style={{
-                      fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 800,
-                      textTransform: "uppercase", letterSpacing: 1,
-                      color: state === "pending" ? "var(--subtle)" : "var(--primary)",
-                      marginTop: 4, whiteSpace: "nowrap",
-                    }}>
-                      {LIFECYCLE_LABELS[phase]}
-                    </span>
-                  </div>
-                  {i < LIFECYCLE.length - 1 && (
-                    <div style={{
-                      flex: 1, height: 2, margin: "0 4px", marginBottom: 18,
-                      background: i < currentIdx ? "var(--primary)" : "var(--border)",
-                    }} />
+            {t.status === "draft" && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 420 }}>
+                  {isAdmin
+                    ? "This tournament is only visible to you. Publish it to make it public and open registration."
+                    : "This tournament is in draft — only an admin can publish it."}
+                </div>
+                {isAdmin && (
+                  <button className="btn btn-primary" onClick={() => handleTransition("live")}>
+                    Publish Tournament →
+                  </button>
+                )}
+              </div>
+            )}
+
+            {t.status === "live" && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                  {t.registration_open
+                    ? (t.registration_end_date
+                        ? `Registration is open until ${t.registration_end_date}.`
+                        : "Registration is open — no closing date set yet.")
+                    : "Registration is currently closed."}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {t.registration_open && (
+                    <button className="btn btn-outline btn-sm" onClick={handleEndRegistrationNow}>
+                      End Registration Now
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button className="btn btn-outline btn-sm" onClick={() => handleTransition("completed")}>
+                      Mark Tournament Completed
+                    </button>
                   )}
                 </div>
-              );
-            })}
-          </div>
-
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {LIFECYCLE.map(phase => (
-              <button
-                key={phase}
-                onClick={() => handleTransition(phase)}
-                className={t.status === phase ? "btn btn-primary btn-sm" : "btn btn-outline btn-sm"}
-              >
-                {LIFECYCLE_LABELS[phase]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── SHARE LINK ── */}
-        <div className="card share-link-card"
-          style={{ marginBottom: 28, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--muted)" }}>
-            Share Tournament
-          </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <ShareButton
-              type="tournament"
-              slug={t.slug}
-              title={`${t.name} — Live on TheScoreBoard`}
-            />
-            <button className="btn btn-outline btn-sm"
-              onClick={() => window.open(`/t/${t.slug}`, "_blank")}>
-              View ↗
-            </button>
-          </div>
-        </div>
-
-        {/* ── BRANDING ── */}
-        <div className="card" style={{ marginBottom: 20, position: "relative" }}>
-          {user?.plan !== "pro" && (
-            <div style={{
-              position: "absolute", inset: 0, zIndex: 10, borderRadius: "inherit",
-              background: "var(--surface)", opacity: 0.92,
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
-            }}>
-              <span style={{ fontSize: 22 }}>🔒</span>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>Pro Feature</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 220 }}>
-                Custom banners &amp; logos require a Pro account.
               </div>
-              <a href="mailto:hi@thescoreboard.in?subject=Upgrade to Pro" style={{
-                marginTop: 4, padding: "7px 18px", borderRadius: 8,
-                background: "#f59e0b", color: "#fff", fontFamily: "var(--font-display)",
-                fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1,
-                textDecoration: "none",
-              }}>
-                Upgrade →
-              </a>
-            </div>
-          )}
-          <div className="card-title" style={{ marginBottom: 2 }}>Branding</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
-            Images are automatically cropped to the correct size before upload.
+            )}
+
+            {t.status === "completed" && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                  This tournament is marked completed and shown as finished to spectators.
+                </div>
+                {isAdmin && (
+                  <button className="btn btn-outline btn-sm" onClick={() => handleTransition("live")}>
+                    Reopen Tournament
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+        )}
 
-          {/* Banner — full width, 16:9 */}
-          <MediaUpload
-            label="Banner"
-            hint="Any image · auto-cropped to 16:9 landscape · shown as hero on tournament page"
-            bucket="tournament-posters"
-            resourceType="tournaments"
-            resourceId={t.tournament_id}
-            filename="poster"
-            enforceAspect="16:9"
-            maxWidth={1920}
-            previewUrl={t.poster_url}
-            onUploaded={async (url) => {
-              try {
-                await updateTournament(t.org_id, t.tournament_id, { poster_url: url });
-                flash("Banner updated!");
-                loadData();
-              } catch (e) { flash("Error saving banner: " + e.message); }
-            }}
-          />
+        {setupSections}
 
-          {/* Logo — square, shown as circle on public page */}
-          <div style={{ marginTop: 16, maxWidth: 180 }}>
-            <MediaUpload
-              label="Logo"
-              hint="Any image · auto-cropped to 1:1 · shown as circle over banner"
-              bucket="logos"
-              resourceType="tournaments"
-              resourceId={t.tournament_id}
-              filename="logo"
-              enforceAspect="1:1"
-              maxWidth={800}
-              previewUrl={t.logo_url}
-              previewStyle={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
-              onUploaded={async (url) => {
-                try {
-                  await updateTournament(t.org_id, t.tournament_id, { logo_url: url });
-                  flash("Logo updated!");
-                  loadData();
-                } catch (e) { flash("Error saving logo: " + e.message); }
-              }}
+        {/* ── Team — manage who can help run this tournament (admins only) ── */}
+        {isAdmin && (
+          <SetupSection icon="👥" title="Team & Access" status="optional" defaultOpen={false}>
+            <MembersSection
+              tournamentId={t.tournament_id}
+              currentUserId={user?.user_id}
+              flash={flash}
             />
+          </SetupSection>
+        )}
+
+        {!detailsComplete && isAdmin && (
+          <div style={{ marginBottom: 24 }}>
+            <PublishCTA complete={false} remaining={setupSummary.totalCount - setupSummary.doneCount} />
           </div>
-        </div>
+        )}
+
+        {/* ── SHARE LINK (unlocked once details are complete) ── */}
+        {detailsComplete && (
+          <div className="card share-link-card"
+            style={{ marginBottom: 28, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--muted)" }}>
+              Share Tournament
+            </div>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <ShareButton
+                type="tournament"
+                slug={t.slug}
+                title={`${t.name} — Live on TheScoreBoard`}
+              />
+              <button className="btn btn-outline btn-sm"
+                onClick={() => window.open(`/t/${t.slug}`, "_blank")}>
+                View ↗
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── SPONSORS ── */}
-        <div style={{ position: "relative", marginBottom: user?.plan !== "pro" ? 20 : 0 }}>
-          {user?.plan !== "pro" && (
-            <div style={{
-              position: "absolute", inset: 0, zIndex: 10, borderRadius: 12,
-              background: "var(--surface)", opacity: 0.92,
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
-              border: "1px solid var(--border)",
-            }}>
-              <span style={{ fontSize: 22 }}>🔒</span>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>Pro Feature</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 220 }}>
-                Sponsors require a Pro account.
-              </div>
-              <a href="mailto:hi@thescoreboard.in?subject=Upgrade to Pro" style={{
-                marginTop: 4, padding: "7px 18px", borderRadius: 8,
-                background: "#f59e0b", color: "#fff", fontFamily: "var(--font-display)",
-                fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1,
-                textDecoration: "none",
-              }}>
-                Upgrade →
-              </a>
-            </div>
-          )}
+        <div style={{ position: "relative", marginBottom: 28 }}>
           <SponsorsSection
             tournamentId={t.tournament_id}
             sponsors={t.sponsors || []}
             onRefresh={loadData}
             flash={flash}
-          />
-        </div>
-
-        {/* ── INFO & RULES ── */}
-        <div style={{ marginBottom: 28 }}>
-          <TournamentInfoEditor
-            orgId={t.org_id}
-            tournamentId={t.tournament_id}
-            initialInfo={t.tournament_info || {}}
-            onSaved={() => flash("Tournament info saved!")}
           />
         </div>
 

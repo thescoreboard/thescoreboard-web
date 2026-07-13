@@ -7,6 +7,8 @@
  * "Full Time" is disabled during 1st half.
  */
 import { useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { ReadyScreen } from "./MobileScorerKit";
 
 // Penalty slot visual
 function PenSlot({ result, isCurrent }) {
@@ -35,6 +37,7 @@ function PenSlot({ result, isCurrent }) {
 }
 
 export default function FootballScorer({ match, config, onScore, onFinish, onWalkover, onGoLive, onPause, onReset, onClose }) {
+  const isMobile = useIsMobile();
   const p1 = match.player_1 || {};
   const p2 = match.player_2 || {};
   const sets = match.sets || [];
@@ -210,6 +213,21 @@ export default function FootballScorer({ match, config, onScore, onFinish, onWal
       </div>
     );
   };
+
+  // ── MOBILE: Ready screen only — the live scoreboard below (half selector,
+  // penalty shootout grid, walkover/pause/reset) is already dark-themed and
+  // keeps its desktop layout on mobile since it has no mockup to follow. ──
+  if (isMobile && isPreLive) {
+    return (
+      <ReadyScreen
+        accent={c.green}
+        leftName={p1?.name || "Team 1"}
+        rightName={p2?.name || "Team 2"}
+        onGoLive={onGoLive}
+        onClose={onClose}
+      />
+    );
+  }
 
   return (
     <div style={{ position:"fixed", inset:0, zIndex:9999, background:c.bg, display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"'Space Grotesk',sans-serif" }}>

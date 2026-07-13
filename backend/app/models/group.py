@@ -43,6 +43,16 @@ class EventParticipant(Base):
     seed = Column(Integer, nullable=True)
     status = Column(String(50), default="active")  # active | eliminated | withdrawn
 
+    # Payment collection — tracks entry-fee payment for this registration.
+    # not_required: tournament has no payment collection configured
+    # pending:      screenshot submitted, awaiting organiser review
+    # paid:         organiser confirmed payment received
+    payment_status         = Column(String(20), nullable=False, default="not_required")
+    payment_screenshot_url = Column(String(500), nullable=True)
+    payment_submitted_at   = Column(DateTime(timezone=True), nullable=True)
+    payment_confirmed_at   = Column(DateTime(timezone=True), nullable=True)
+    payment_confirmed_by   = Column(Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -55,6 +65,7 @@ class EventParticipant(Base):
     player = relationship("Player", back_populates="event_participations")
     team = relationship("Team", back_populates="event_participations")
     group = relationship("Group", back_populates="participants")
+    payment_confirmed_by_user = relationship("User", foreign_keys=[payment_confirmed_by])
 
 
 class Standing(Base):

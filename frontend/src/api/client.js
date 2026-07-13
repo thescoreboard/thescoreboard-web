@@ -112,6 +112,15 @@ export const createSponsor = (tId, d)         => request("POST",   `/orgs/tourna
 export const updateSponsor = (tId, sId, d)     => request("PATCH",  `/orgs/tournaments/${tId}/sponsors/${sId}`, d);
 export const deleteSponsor = (tId, sId)        => request("DELETE", `/orgs/tournaments/${tId}/sponsors/${sId}`);
 
+// Tournament members & invite links (multi-user access)
+export const getTournamentMembers = (tId)          => request("GET",    `/tournaments/${tId}/members`);
+export const createInvite         = (tId, d)       => request("POST",   `/tournaments/${tId}/invites`, d);
+export const revokeInvite         = (tId, inviteId)=> request("DELETE", `/tournaments/${tId}/invites/${inviteId}`);
+export const updateMemberRole     = (tId, userId, role) => request("PATCH", `/tournaments/${tId}/members/${userId}`, { role });
+export const removeMember         = (tId, userId)  => request("DELETE", `/tournaments/${tId}/members/${userId}`);
+export const getInviteInfo        = (token)        => request("GET",    `/public/invites/${token}`);
+export const acceptInvite         = (token)        => request("POST",   `/tournaments/invites/${token}/accept`);
+
 // Events
 export const createEvent = (tId, d) => request("POST", `/tournaments/${tId}/events`, d);
 export const getEvents = (tId) => request("GET", `/tournaments/${tId}/events`);
@@ -122,6 +131,8 @@ export const generateFixtures = (eId, thirdPlace = false) =>
 export const generateGroupMatches = (eId) =>
   request("POST", `/events/${eId}/generate-group-matches`);
 export const getStandings = (eId) => request("GET", `/orgs/events/${eId}/standings`);
+export const setParticipantPaid = (eId, epId, paid) =>
+  request("PATCH", `/orgs/events/${eId}/participants/${epId}/payment?paid=${paid}`);
 
 // Players
 export const createPlayer = (d, orgId) => request("POST", `/players/${orgId ? `?org_id=${orgId}` : ""}`, d);

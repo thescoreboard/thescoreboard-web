@@ -12,6 +12,7 @@ import Register            from "./pages/auth/Register";
 import PrivacyPolicy       from "./pages/PrivacyPolicy";
 import Terms               from "./pages/Terms";
 import About               from "./pages/About";
+import JoinTournament      from "./pages/JoinTournament";
 
 // Player
 import PlayerDashboard from "./pages/player/PlayerDashboard";
@@ -60,6 +61,9 @@ export default function App() {
         {/* Auth */}
         <Route path="/login"    element={<Login />} />
         <Route path="/register" element={<Register />} />
+
+        {/* Tournament invite links — public route, page handles auth itself */}
+        <Route path="/join/:token" element={<JoinTournament />} />
 
         {/* Legal / company */}
         <Route path="/privacy" element={<PrivacyPolicy />} />

@@ -3,21 +3,30 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   getWorkspace,
   createPlayer, addPlayerToEvent, assignPlayerGroup, removePlayerFromEvent,
-  updateParticipantSeed,
+  updateParticipantSeed, setParticipantPaid,
   createGroup, generateFixtures, createMatch, generateGroupMatches,
   updateMatchStatus, updateScore, undoSet, rematchMatch, deleteMatch, walkoverMatch,
   getMe, clearToken, configureEvent, updateTournament, updateEvent,
+  transitionTournament,
 } from "../../../api/client";
 import PageLoader from "../../../components/shared/PageLoader";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import TTScorer        from "../../../components/scoring/TTScorer";
 import BadmintonScorer from "../../../components/scoring/BadmintonScorer";
 import CricketScorer   from "../../../components/scoring/CricketScorer";
 import FootballScorer  from "../../../components/scoring/FootballScorer";
 import OrgHeader            from "../../../components/shared/OrgHeader";
 import { IndividualTab, DoublesTab, TeamTab } from "../../../components/shared/ParticipantsTab";
-import TournamentInfoEditor from "../../../components/organiser/TournamentInfoEditor";
 import SponsorsSection      from "../../../components/organiser/SponsorsSection";
+import MembersSection       from "../../../components/organiser/MembersSection";
 import { MediaUpload }      from "../../../components/shared/MediaUpload";
+import TournamentBasicInfoSection from "../../../components/organiser/TournamentBasicInfoSection";
+import PaymentSettingsSection from "../../../components/organiser/PaymentSettingsSection";
+import SetupSection         from "../../../components/organiser/SetupSection";
+import DatePicker           from "../../../components/shared/DatePicker";
+import { SetupProgressHeader, SetupCreatedBanner, PublishCTA, LockedTabPlaceholder } from "../../../components/organiser/SetupProgressChrome";
+import { PrizePoolSection, RulesSection } from "../../../components/organiser/TournamentInfoEditor";
+import { getEventSetupChecklist, summarizeChecklist, isSectionComplete } from "../../../utils/tournamentCompleteness";
 
 const SPORT_META = {
   table_tennis: { abbrev: "🏓", label: "Table Tennis" },
@@ -46,6 +55,7 @@ const finishMatchAPI      = (mId, body) => apiFetch(`/matches/${mId}/finish`, { 
 export default function EventWorkspace() {
   const { tournamentId, eventId } = useParams();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const [data,               setData]               = useState(null);
   const [user,               setUser]               = useState(null);
@@ -59,10 +69,7 @@ export default function EventWorkspace() {
   const [qualifiersPerGroup, setQualifiersPerGroup] = useState(2);
   const [editingOvers,       setEditingOvers]       = useState(false);
   const [oversVal,           setOversVal]           = useState(null);
-  const [editingTournament,  setEditingTournament]  = useState(false);
-  const [editingEvent,       setEditingEvent]       = useState(false);
-  const [tForm,              setTForm]              = useState(null);
-  const [eForm,              setEForm]              = useState(null);
+  const [setupBannerDismissed, setSetupBannerDismissed] = useState(false);
 
   const flash = (txt) => { setMsg(txt); setTimeout(() => setMsg(""), 3000); };
 
@@ -150,6 +157,17 @@ export default function EventWorkspace() {
   const liveCount       = currentEvent.matches?.filter(m => m.status === "live").length || 0;
   const activeMatchData = activeMatch ? currentEvent.matches?.find(m => m.match_id === activeMatch) : null;
 
+  // ── Setup Progress checklist — gates Registration/Fixtures/Live tabs ──
+  const setupChecklist  = getEventSetupChecklist(t, currentEvent);
+  const setupSummary    = summarizeChecklist(setupChecklist);
+  const detailsComplete = setupSummary.complete;
+
+  // ── My role on this tournament — gates the danger zone (publish/delete/
+  // members). Old backends don't send my_role; anyone with access then was
+  // an owner, so default to admin.
+  const myRole  = data.my_role || "admin";
+  const isAdmin = myRole === "admin";
+
   // ── Participant handlers ──────────────────────────────────
 
   const handleAddPlayer = async (form) => {
@@ -179,10 +197,44 @@ export default function EventWorkspace() {
     } catch (e) { flash("Error: " + e.message); }
   };
 
+  const handleSetPaid = async (epId, paid) => {
+    try {
+      await setParticipantPaid(currentEvent.event_id, epId, paid);
+      loadData(); loadTeams();
+      flash(paid ? "Marked as paid." : "Marked as awaiting review.");
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
   const handleUpdateSeed = async (playerId, seedLevel) => {
     try {
       await updateParticipantSeed(currentEvent.event_id, playerId, seedLevel);
       loadData();
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  // ── Tournament lifecycle (draft/live/completed) ───────────
+  const handleTournamentTransition = async (targetStatus) => {
+    try {
+      await transitionTournament(t.tournament_id, targetStatus);
+      loadData();
+      flash(
+        targetStatus === "live"      ? "Tournament published — it's now live!" :
+        targetStatus === "completed" ? "Tournament marked completed." :
+        "Tournament moved back to draft."
+      );
+    } catch (e) { flash("Error: " + e.message); }
+  };
+
+  // "End Registration Now" — reuses the existing registration_end_date field
+  // instead of a separate manual-close flag: setting it to yesterday closes
+  // registration immediately, and the organiser can just edit the date again
+  // later if they want to reopen it.
+  const handleEndRegistrationNow = async () => {
+    try {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      await updateTournament(t.org_id, t.tournament_id, { registration_end_date: yesterday });
+      loadData();
+      flash("Registration closed.");
     } catch (e) { flash("Error: " + e.message); }
   };
 
@@ -458,57 +510,85 @@ export default function EventWorkspace() {
         {TABS.map(tb => (
           <button key={tb} className={`tab${tab === tb ? " active" : ""}`} onClick={() => setTab(tb)}>
             {tabLabel(tb)}
+            {tb !== "overview" && !detailsComplete && <span style={{ marginLeft: 5 }}>🔒</span>}
             {tb === "live" && liveCount > 0 && <span className="tab-badge">{liveCount}</span>}
           </button>
         ))}
       </div>
 
       <div className="workspace-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 24px" }}>
+        {tab !== "overview" && !detailsComplete ? (
+          <LockedTabPlaceholder onBack={() => setTab("overview")} label={tabLabel(tab)} />
+        ) : (
+        <>
 
         {/* ══ OVERVIEW ══════════════════════════════════════════ */}
         {tab === "overview" && (() => {
-          const fmtDate = (d) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
           const inputStyle = { background: "var(--elevated)", border: "1px solid var(--border-mid)", borderRadius: 6, padding: "7px 10px", fontSize: 13, color: "var(--ink)", width: "100%", outline: "none", fontFamily: "inherit" };
           const labelStyle = { fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)", fontFamily: "var(--font-display)", marginBottom: 4, display: "block" };
           const fieldStyle = { marginBottom: 14 };
+          const fullInfo = t.tournament_info || {};
 
-          const startEditTournament = () => {
-            setTForm({
-              name:                    t.name || "",
-              venue:                   t.venue || "",
-              city:                    t.city || "",
-              state:                   t.state || "",
-              start_date:              t.start_date || "",
-              end_date:                t.end_date || "",
-              registration_start_date: t.registration_start_date || "",
-              registration_end_date:   t.registration_end_date || "",
-            });
-            setEditingTournament(true);
-          };
-
-          const saveTournament = async () => {
-            try {
-              const payload = {};
-              Object.entries(tForm).forEach(([k, v]) => { payload[k] = v || null; });
-              await updateTournament(t.org_id, t.tournament_id, payload);
-              loadData();
-              setEditingTournament(false);
-              flash("Tournament details updated!");
-            } catch (e) { flash("Error: " + e.message); }
-          };
-
-          const startEditEvent = () => {
-            setEForm({
-              name:       currentEvent.name || "",
+          // Format & Play fields fold into the Basic Info section via `extra`
+          // instead of being their own accordion block.
+          const formatPlayExtra = {
+            statusSections: ["format"],
+            initExtra: () => ({
               format:     currentEvent.format || "direct_knockout",
               squad_size: currentEvent.squad_size || 11,
               overs:      currentEvent.sport_config?.overs ?? 20,
-            });
-            setEditingEvent(true);
-          };
-
-          const saveEvent = async () => {
-            try {
+            }),
+            editableFields: (eForm, setEForm) => (
+              <>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Tournament Format</label>
+                  <select style={inputStyle} value={eForm.format} onChange={e => setEForm(f => ({ ...f, format: e.target.value }))}>
+                    <option value="direct_knockout">Direct Knockout</option>
+                    <option value="round_robin">Round Robin</option>
+                    <option value="group_knockout">Group Stage + Knockout</option>
+                  </select>
+                </div>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Participant Type</label>
+                  <div style={{ ...inputStyle, background: "none", border: "none", padding: "7px 0", color: "var(--muted)" }}>
+                    {isDoubles ? "Doubles Pairs" : isTeam ? "Team" : "Individual"}
+                  </div>
+                </div>
+                {currentEvent.sport_key === "cricket" && (
+                  <>
+                    <div style={fieldStyle}>
+                      <label style={labelStyle}>Squad Size <span style={{ color: "var(--muted)", textTransform: "none", letterSpacing: 0 }}>(wickets = squad − 1)</span></label>
+                      <input style={inputStyle} type="number" min={6} max={15} value={eForm.squad_size}
+                        onChange={e => setEForm(f => ({ ...f, squad_size: parseInt(e.target.value) || 11 }))} />
+                    </div>
+                    <div style={fieldStyle}>
+                      <label style={labelStyle}>Overs per Innings</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button className="btn btn-outline btn-sm" style={{ width: 32, padding: 0 }}
+                          onClick={() => setEForm(f => ({ ...f, overs: Math.max(1, (f.overs || 20) - 1) }))}>−</button>
+                        <span style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 900, color: "var(--primary)", minWidth: 36, textAlign: "center" }}>
+                          {eForm.overs ?? 20}
+                        </span>
+                        <button className="btn btn-outline btn-sm" style={{ width: 32, padding: 0 }}
+                          onClick={() => setEForm(f => ({ ...f, overs: Math.min(50, (f.overs || 20) + 1) }))}>+</button>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                          {eForm.overs === 5 ? "T5" : eForm.overs === 10 ? "T10" : eForm.overs === 20 ? "T20" : eForm.overs === 50 ? "ODI" : "Custom"}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+                {currentEvent.sport_key === "football" && (
+                  <div style={fieldStyle}>
+                    <label style={labelStyle}>Team Format</label>
+                    <div style={{ ...inputStyle, background: "none", border: "none", padding: "7px 0", color: "var(--muted)" }}>
+                      {currentEvent.team_size ?? 11}-a-side · {currentEvent.substitutes ?? 5} subs · {currentEvent.sport_config?.half_duration_minutes ?? 45} min halves
+                    </div>
+                  </div>
+                )}
+              </>
+            ),
+            onSaveExtra: async (eForm) => {
               if (currentEvent.sport_key === "cricket") {
                 const squadSize = parseInt(eForm.squad_size) || 11;
                 const overs     = parseInt(eForm.overs) || 20;
@@ -520,60 +600,312 @@ export default function EventWorkspace() {
                 });
               } else {
                 await updateEvent(currentEvent.event_id, {
-                  name:   eForm.name   || undefined,
                   format: eForm.format || undefined,
                 });
               }
-              loadData();
-              setEditingEvent(false);
-              flash("Event settings updated!");
-            } catch (e) { flash("Error: " + e.message); }
+            },
           };
+
+          // Registration & Contact fields folded into Basic Info via `extra`
+          // instead of their own accordion block.
+          const contactExtra = {
+            statusSections: ["contact"],
+            initExtra: () => ({
+              contact: {
+                entry_fee:    fullInfo.contact?.entry_fee    || "",
+                reg_deadline: fullInfo.contact?.reg_deadline || "",
+                persons:      fullInfo.contact?.persons      || [],
+              },
+            }),
+            editableFields: (extraForm, setExtraForm) => {
+              const contact = extraForm.contact;
+              const setContact = (updater) => setExtraForm(f => ({ ...f, contact: updater(f.contact) }));
+              return (
+                <>
+                  <div style={fieldStyle}>
+                    <label style={labelStyle}>Registration Deadline</label>
+                    <DatePicker value={contact.reg_deadline} onChange={val => setContact(c => ({ ...c, reg_deadline: val }))} placeholder="Pick a date" />
+                  </div>
+                  <div style={{ ...fieldStyle, gridColumn: "1 / -1" }}>
+                    <label style={labelStyle}>Contact Persons</label>
+                    {contact.persons.map((p, i) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 8 }}>
+                        <input style={inputStyle} placeholder="Name" value={p.name}
+                          onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x) }))} />
+                        <input style={inputStyle} placeholder="Phone / WhatsApp" value={p.phone}
+                          onChange={e => setContact(c => ({ ...c, persons: c.persons.map((x, idx) => idx === i ? { ...x, phone: e.target.value } : x) }))} />
+                        <button className="btn btn-outline btn-sm" style={{ padding: "0 10px" }}
+                          onClick={() => setContact(c => ({ ...c, persons: c.persons.filter((_, idx) => idx !== i) }))}>×</button>
+                      </div>
+                    ))}
+                    <button className="btn btn-outline btn-sm"
+                      onClick={() => setContact(c => ({ ...c, persons: [...c.persons, { name: "", phone: "" }] }))}>
+                      + Add Contact Person
+                    </button>
+                  </div>
+                </>
+              );
+            },
+            onSaveExtra: async (extraForm) => {
+              await updateTournament(t.org_id, t.tournament_id, { tournament_info: { ...fullInfo, contact: extraForm.contact } });
+            },
+          };
+
+          const eventCard = (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 10, background: "var(--primary-dim)", border: "1px solid rgba(255,107,53,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 900, color: "var(--primary)", flexShrink: 0 }}>
+                  {sm.abbrev}
+                </div>
+                <div>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 900, textTransform: "uppercase", letterSpacing: -0.5, color: "var(--ink)" }}>
+                    {currentEvent.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span>{sm.label}</span>
+                    <span>·</span>
+                    <span>{currentEvent.format.replace(/_/g, " ")}</span>
+                    <span>·</span>
+                    <span className={`pill ${isDoubles ? "pill-gold" : isTeam ? "pill-orange" : "pill-green"}`}>
+                      {isDoubles ? "Doubles Pairs" : isTeam ? "Team Sport" : "Individual"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="stats-grid" style={{ marginBottom: 16 }}>
+                {[
+                  { label: isDoubles ? "Pairs" : isTeam ? "Teams" : "Players", value: currentEvent.player_count },
+                  { label: "Matches", value: currentEvent.match_count },
+                  { label: "Done",    value: `${currentEvent.done_count || 0}/${currentEvent.match_count}` },
+                  { label: "Live",    value: liveCount, color: liveCount > 0 ? "var(--primary)" : undefined },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="stat-card" style={{ margin: 0 }}>
+                    <div className="stat-num" style={color ? { color } : {}}>{value}</div>
+                    <div className="stat-label">{label}</div>
+                  </div>
+                ))}
+              </div>
+              {liveCount > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn btn-danger" onClick={() => setTab("live")}>Score Live</button>
+                </div>
+              )}
+            </div>
+          );
+
+          const setupSections = (
+            <>
+              <TournamentBasicInfoSection
+                t={t} checklist={setupChecklist}
+                defaultOpen={
+                  !isSectionComplete(setupChecklist, "basic") ||
+                  !isSectionComplete(setupChecklist, "format") ||
+                  !isSectionComplete(setupChecklist, "contact")
+                }
+                onSaved={loadData} flash={flash}
+                extras={[formatPlayExtra, contactExtra]}
+              />
+
+              <PrizePoolSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
+                defaultOpen={!isSectionComplete(setupChecklist, "prize")} onSaved={loadData} flash={flash} />
+
+              <RulesSection orgId={t.org_id} tournamentId={t.tournament_id} fullInfo={fullInfo} checklist={setupChecklist}
+                defaultOpen={!isSectionComplete(setupChecklist, "rules")} onSaved={loadData} flash={flash} />
+
+              <PaymentSettingsSection t={t} defaultOpen={false} onSaved={loadData} flash={flash} />
+
+              <SetupSection icon="🎨" title="Branding" status="optional" defaultOpen={false}>
+                <div style={{ maxWidth: 240 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Logo</div>
+                  <MediaUpload
+                    label=""
+                    hint="JPEG / PNG / WebP · Recommended 400×400px"
+                    bucket="logos"
+                    resourceType="tournaments"
+                    resourceId={t.tournament_id}
+                    filename="logo"
+                    enforceAspect="1:1"
+                    maxWidth={400}
+                    previewUrl={t.logo_url}
+                    previewStyle={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", borderRadius: 6 }}
+                    onUploaded={async (url) => {
+                      try {
+                        await updateTournament(t.org_id, t.tournament_id, { logo_url: url });
+                        loadData();
+                        flash("Logo updated!");
+                      } catch (e) { flash("Error: " + e.message); }
+                    }}
+                  />
+                </div>
+              </SetupSection>
+            </>
+          );
+
+          // ── Setup in progress: banner + progress bar + checklist + Publish CTA ──
+          if (!detailsComplete) {
+            return (
+              <div>
+                {!setupBannerDismissed && (
+                  <SetupCreatedBanner onDismiss={() => setSetupBannerDismissed(true)} />
+                )}
+                <SetupProgressHeader doneCount={setupSummary.doneCount} totalCount={setupSummary.totalCount} percent={setupSummary.percent} />
+                {setupSections}
+                {isAdmin && (
+                  <SetupSection icon="👥" title="Team & Access" status="optional" defaultOpen={false}>
+                    <MembersSection
+                      tournamentId={t.tournament_id}
+                      currentUserId={user?.user_id}
+                      flash={flash}
+                    />
+                  </SetupSection>
+                )}
+                {isAdmin && (
+                  <div style={{ marginBottom: 24 }}>
+                    <PublishCTA complete={false} remaining={setupSummary.totalCount - setupSummary.doneCount} />
+                  </div>
+                )}
+
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 800, letterSpacing: "2.5px", color: "var(--muted)", textTransform: "uppercase", marginBottom: 14 }}>
+                  Event
+                </div>
+                {eventCard}
+              </div>
+            );
+          }
+
+          // ── Setup complete: normal workspace overview ──
+          const checklist = [
+            { label: "Tournament created", done: true },
+            { label: "Registration open",  done: !!t.registration_open },
+            { label: "Add first fixtures", done: (currentEvent.match_count || 0) > 0 },
+          ];
+          const doneCount = checklist.filter(i => i.done).length;
+          const navCards = [
+            { label: "Fixtures",    sub: "Add matches & start scoring",     onClick: () => setTab("fixtures") },
+            { label: "Registration",sub: "Share sign-up link with players", onClick: () => setTab(pTab) },
+            showStandings   && { label: "Standings", sub: "Group & round-robin rankings", onClick: () => setTab("standings") },
+            liveCount > 0   && { label: "Live",      sub: `${liveCount} match${liveCount !== 1 ? "es" : ""} in progress`, onClick: () => setTab("live") },
+          ].filter(Boolean);
 
           return (
             <div>
-              {/* ── Stats bar ── */}
+              {eventCard}
+
               <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 10, background: "var(--primary-dim)", border: "1px solid rgba(255,107,53,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 900, color: "var(--primary)", flexShrink: 0 }}>
-                    {sm.abbrev}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "var(--ink)" }}>
+                    Get It Match-Ready
                   </div>
-                  <div>
-                    <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 900, textTransform: "uppercase", letterSpacing: -0.5, color: "var(--ink)" }}>
-                      {currentEvent.name}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <span>{sm.label}</span>
-                      <span>·</span>
-                      <span>{currentEvent.format.replace(/_/g, " ")}</span>
-                      <span>·</span>
-                      <span className={`pill ${isDoubles ? "pill-gold" : isTeam ? "pill-orange" : "pill-green"}`}>
-                        {isDoubles ? "Doubles Pairs" : isTeam ? "Team Sport" : "Individual"}
-                      </span>
-                    </div>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)" }}>{doneCount}/{checklist.length}</span>
+                </div>
+                {checklist.map(item => (
+                  <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                    <span style={{
+                      width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: item.done ? "var(--primary)" : "transparent",
+                      border: item.done ? "none" : "2px solid var(--border-mid)",
+                      color: "#fff", fontSize: 11, fontWeight: 900,
+                    }}>
+                      {item.done && "✓"}
+                    </span>
+                    <span style={{ fontSize: 13, color: item.done ? "var(--ink)" : "var(--muted)" }}>{item.label}</span>
                   </div>
-                </div>
-                <div className="stats-grid" style={{ marginBottom: 16 }}>
-                  {[
-                    { label: isDoubles ? "Pairs" : isTeam ? "Teams" : "Players", value: currentEvent.player_count },
-                    { label: "Matches", value: currentEvent.match_count },
-                    { label: "Done",    value: `${currentEvent.done_count || 0}/${currentEvent.match_count}` },
-                    { label: "Live",    value: liveCount, color: liveCount > 0 ? "var(--primary)" : undefined },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} className="stat-card" style={{ margin: 0 }}>
-                      <div className="stat-num" style={color ? { color } : {}}>{value}</div>
-                      <div className="stat-label">{label}</div>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
+                {navCards.map(card => (
+                  <div key={card.label} className="card card-interactive" onClick={card.onClick}
+                    style={{ cursor: "pointer", margin: 0 }}>
+                    <div style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: -0.5, color: "var(--ink)" }}>
+                      {card.label}
                     </div>
-                  ))}
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{card.sub}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)" }}>
+                    Tournament Status
+                  </div>
+                  <span className={`pill ${t.status === "live" ? "pill-orange" : t.status === "completed" ? "pill-green" : "pill-gray"}`}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {t.status === "live" && <span className="live-dot" style={{ width: 6, height: 6 }} />}
+                    {t.status?.charAt(0).toUpperCase() + t.status?.slice(1)}
+                  </span>
                 </div>
-                {liveCount > 0 && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button className="btn btn-danger" onClick={() => setTab("live")}>Score Live</button>
+
+                {t.status === "draft" && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 420 }}>
+                      {isAdmin
+                        ? "This tournament is only visible to you. Publish it to make it public and open registration."
+                        : "This tournament is in draft — only an admin can publish it."}
+                    </div>
+                    {isAdmin && (
+                      <button className="btn btn-primary" onClick={() => handleTournamentTransition("live")}>
+                        Publish Tournament →
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {t.status === "live" && (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                      <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                        {t.registration_open
+                          ? (t.registration_end_date
+                              ? `Registration is open until ${t.registration_end_date}.`
+                              : "Registration is open — no closing date set yet.")
+                          : "Registration is currently closed."}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {t.registration_open && (
+                          <button className="btn btn-outline btn-sm" onClick={handleEndRegistrationNow}>
+                            End Registration Now
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <button className="btn btn-outline btn-sm" onClick={() => handleTournamentTransition("completed")}>
+                            Mark Tournament Completed
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {t.status === "completed" && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                      This tournament is marked completed and shown as finished to spectators.
+                    </div>
+                    {isAdmin && (
+                      <button className="btn btn-outline btn-sm" onClick={() => handleTournamentTransition("live")}>
+                        Reopen Tournament
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* ── Share Tournament ── */}
+              {setupSections}
+
+              {/* ── Team — manage who can help run this tournament (admins only) ── */}
+              {isAdmin && (
+                <SetupSection icon="👥" title="Team & Access" status="optional" defaultOpen={false}>
+                  <MembersSection
+                    tournamentId={t.tournament_id}
+                    currentUserId={user?.user_id}
+                    flash={flash}
+                  />
+                </SetupSection>
+              )}
+
               <div className="card" style={{ marginBottom: 16 }}>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)", marginBottom: 12 }}>
                   Share Tournament
@@ -611,60 +943,6 @@ export default function EventWorkspace() {
                 </div>
               </div>
 
-              {/* ── Branding ── */}
-              <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)", marginBottom: 12 }}>
-                  Branding
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Banner</div>
-                    <MediaUpload
-                      label=""
-                      hint="JPEG / PNG / WebP · Recommended 1200×400px"
-                      bucket="logos"
-                      resourceType="tournaments"
-                      resourceId={t.tournament_id}
-                      filename="banner"
-                      enforceAspect="3:1"
-                      maxWidth={1200}
-                      previewUrl={t.banner_url}
-                      previewStyle={{ width: "100%", aspectRatio: "3/1", objectFit: "cover", borderRadius: 6 }}
-                      onUploaded={async (url) => {
-                        try {
-                          await updateTournament(t.tournament_id, { banner_url: url });
-                          loadData();
-                          flash("Banner updated!");
-                        } catch (e) { flash("Error: " + e.message); }
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tournament Logo</div>
-                    <MediaUpload
-                      label=""
-                      hint="JPEG / PNG / WebP · Recommended 400×400px"
-                      bucket="logos"
-                      resourceType="tournaments"
-                      resourceId={t.tournament_id}
-                      filename="logo"
-                      enforceAspect="1:1"
-                      maxWidth={400}
-                      previewUrl={t.logo_url}
-                      previewStyle={{ width: "100%", aspectRatio: "1/1", objectFit: "contain", borderRadius: 6 }}
-                      onUploaded={async (url) => {
-                        try {
-                          await updateTournament(t.tournament_id, { logo_url: url });
-                          loadData();
-                          flash("Logo updated!");
-                        } catch (e) { flash("Error: " + e.message); }
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Sponsors ── */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <SponsorsSection
                   tournamentId={t.tournament_id}
@@ -672,200 +950,6 @@ export default function EventWorkspace() {
                   onRefresh={loadData}
                   flash={flash}
                 />
-              </div>
-
-              {/* ── Tournament Info (Overview / Prize Pool / Rules / Contact) ── */}
-              <TournamentInfoEditor
-                orgId={t.org_id}
-                tournamentId={t.tournament_id}
-                initialInfo={t.tournament_info || {}}
-                flash={flash}
-                onSaved={loadData}
-              />
-
-              {/* ── Tournament Details ── */}
-              <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)" }}>
-                    Tournament Details
-                  </div>
-                  {!editingTournament && (
-                    <button className="btn btn-outline btn-sm" onClick={startEditTournament}>Edit</button>
-                  )}
-                </div>
-
-                {!editingTournament ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px 24px" }}>
-                    {[
-                      { label: "Tournament Name", value: t.name },
-                      { label: "Venue",           value: t.venue || "—" },
-                      { label: "City",            value: t.city  || "—" },
-                      { label: "State",           value: t.state || "—" },
-                      { label: "Start Date",      value: fmtDate(t.start_date) },
-                      { label: "End Date",        value: fmtDate(t.end_date) },
-                      { label: "Reg. Opens",      value: fmtDate(t.registration_start_date) },
-                      { label: "Reg. Closes",     value: fmtDate(t.registration_end_date) },
-                      { label: "Status",          value: t.status?.charAt(0).toUpperCase() + t.status?.slice(1) },
-                    ].map(({ label, value }) => (
-                      <div key={label}>
-                        <div style={labelStyle}>{label}</div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{value}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 20px" }}>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Tournament Name</label>
-                        <input style={inputStyle} value={tForm.name} onChange={e => setTForm(f => ({ ...f, name: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Venue</label>
-                        <input style={inputStyle} value={tForm.venue} onChange={e => setTForm(f => ({ ...f, venue: e.target.value }))} placeholder="e.g. Sports Complex" />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>City</label>
-                        <input style={inputStyle} value={tForm.city} onChange={e => setTForm(f => ({ ...f, city: e.target.value }))} placeholder="e.g. Mumbai" />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>State</label>
-                        <input style={inputStyle} value={tForm.state} onChange={e => setTForm(f => ({ ...f, state: e.target.value }))} placeholder="e.g. Maharashtra" />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Tournament Start Date</label>
-                        <input style={inputStyle} type="date" value={tForm.start_date} onChange={e => setTForm(f => ({ ...f, start_date: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Tournament End Date</label>
-                        <input style={inputStyle} type="date" value={tForm.end_date} onChange={e => setTForm(f => ({ ...f, end_date: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Registration Opens</label>
-                        <input style={inputStyle} type="date" value={tForm.registration_start_date} onChange={e => setTForm(f => ({ ...f, registration_start_date: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Registration Closes</label>
-                        <input style={inputStyle} type="date" value={tForm.registration_end_date} onChange={e => setTForm(f => ({ ...f, registration_end_date: e.target.value }))} />
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                      <button className="btn btn-primary btn-sm" onClick={saveTournament}>Save Changes</button>
-                      <button className="btn btn-outline btn-sm" onClick={() => setEditingTournament(false)}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Event / Match Settings ── */}
-              <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: "var(--primary)" }}>
-                    Match Configuration
-                  </div>
-                  {!editingEvent && (
-                    <button className="btn btn-outline btn-sm" onClick={startEditEvent}>Edit</button>
-                  )}
-                </div>
-
-                {!editingEvent ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "12px 24px" }}>
-                    <div>
-                      <div style={labelStyle}>Event Name</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{currentEvent.name}</div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>Tournament Format</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{currentEvent.format?.replace(/_/g, " ")}</div>
-                    </div>
-                    <div>
-                      <div style={labelStyle}>Participant Type</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{isDoubles ? "Doubles Pairs" : isTeam ? "Team" : "Individual"}</div>
-                    </div>
-                    {currentEvent.sport_key === "cricket" && (
-                      <>
-                        <div>
-                          <div style={labelStyle}>Overs per Innings</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>
-                            {currentEvent.sport_config?.overs ?? 20}
-                            <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: 6 }}>
-                              {(currentEvent.sport_config?.overs ?? 20) === 10 ? "(T10)" : (currentEvent.sport_config?.overs ?? 20) === 20 ? "(T20)" : (currentEvent.sport_config?.overs ?? 20) === 50 ? "(ODI)" : ""}
-                            </span>
-                          </div>
-                        </div>
-                        <div>
-                          <div style={labelStyle}>Squad Size</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{currentEvent.squad_size ?? 11} players</div>
-                        </div>
-                        <div>
-                          <div style={labelStyle}>Wickets</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{currentEvent.sport_config?.wickets ?? ((currentEvent.squad_size ?? 11) - 1)}</div>
-                        </div>
-                      </>
-                    )}
-                    {currentEvent.sport_key === "football" && (
-                      <>
-                        <div>
-                          <div style={labelStyle}>Team Format</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{currentEvent.team_size ?? 11}-a-side</div>
-                        </div>
-                        <div>
-                          <div style={labelStyle}>Substitutes</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{currentEvent.substitutes ?? 5}</div>
-                        </div>
-                        <div>
-                          <div style={labelStyle}>Half Duration</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{currentEvent.sport_config?.half_duration_minutes ?? 45} mins</div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 20px" }}>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Event Name</label>
-                        <input style={inputStyle} value={eForm.name} onChange={e => setEForm(f => ({ ...f, name: e.target.value }))} />
-                      </div>
-                      <div style={fieldStyle}>
-                        <label style={labelStyle}>Tournament Format</label>
-                        <select style={inputStyle} value={eForm.format} onChange={e => setEForm(f => ({ ...f, format: e.target.value }))}>
-                          <option value="direct_knockout">Direct Knockout</option>
-                          <option value="round_robin">Round Robin</option>
-                          <option value="group_knockout">Group Stage + Knockout</option>
-                        </select>
-                      </div>
-                      {currentEvent.sport_key === "cricket" && (
-                        <>
-                          <div style={fieldStyle}>
-                            <label style={labelStyle}>Squad Size <span style={{ color: "var(--muted)", textTransform: "none", letterSpacing: 0 }}>(wickets = squad − 1)</span></label>
-                            <input style={inputStyle} type="number" min={6} max={15} value={eForm.squad_size}
-                              onChange={e => setEForm(f => ({ ...f, squad_size: parseInt(e.target.value) || 11 }))} />
-                          </div>
-                          <div style={fieldStyle}>
-                            <label style={labelStyle}>Overs per Innings</label>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <button className="btn btn-outline btn-sm" style={{ width: 32, padding: 0 }}
-                                onClick={() => setEForm(f => ({ ...f, overs: Math.max(1, (f.overs || 20) - 1) }))}>−</button>
-                              <span style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 900, color: "var(--primary)", minWidth: 36, textAlign: "center" }}>
-                                {eForm.overs ?? 20}
-                              </span>
-                              <button className="btn btn-outline btn-sm" style={{ width: 32, padding: 0 }}
-                                onClick={() => setEForm(f => ({ ...f, overs: Math.min(50, (f.overs || 20) + 1) }))}>+</button>
-                              <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                                {eForm.overs === 5 ? "T5" : eForm.overs === 10 ? "T10" : eForm.overs === 20 ? "T20" : eForm.overs === 50 ? "ODI" : "Custom"}
-                              </span>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                      <button className="btn btn-primary btn-sm" onClick={saveEvent}>Save Changes</button>
-                      <button className="btn btn-outline btn-sm" onClick={() => setEditingEvent(false)}>Cancel</button>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           );
@@ -884,6 +968,8 @@ export default function EventWorkspace() {
             onAssignGroup={handleAssignGroup}
             onRemovePlayer={handleRemovePlayer}
             onUpdateSeed={handleUpdateSeed}
+            onSetPaid={handleSetPaid}
+            paymentEnabled={t.payment_enabled}
             flash={flash}
           />
         )}
@@ -894,6 +980,8 @@ export default function EventWorkspace() {
             pairs={eventTeams}
             onAddPair={handleAddPair}
             onRemovePair={handleRemovePair}
+            onSetPaid={handleSetPaid}
+            paymentEnabled={t.payment_enabled}
             flash={flash}
             numGroups={numGroups}
             setNumGroups={setNumGroups}
@@ -907,16 +995,24 @@ export default function EventWorkspace() {
             teams={eventTeams}
             onAddTeam={handleAddTeam}
             onRemoveTeam={handleRemoveTeam}
+            onSetPaid={handleSetPaid}
+            paymentEnabled={t.payment_enabled}
             flash={flash}
           />
         )}
 
         {/* ══ FIXTURES ══════════════════════════════════════════ */}
-        {tab === "fixtures" && (
+        {tab === "fixtures" && (() => {
+          // Once a tournament is marked completed, its bracket is final —
+          // hide every action that would mutate it (add/regenerate matches).
+          // Read-only views (scores, standings) stay visible.
+          const isCompleted = t.status === "completed";
+          return (
           <div>
             {currentEvent.format === "group_knockout" ? (
               <GroupKnockoutFixtures
                 event={currentEvent}
+                isCompleted={isCompleted}
                 numGroups={numGroups}
                 setNumGroups={setNumGroups}
                 qualifiersPerGroup={qualifiersPerGroup}
@@ -971,42 +1067,46 @@ export default function EventWorkspace() {
                 // ── Matches exist → control bar + add manually + bracket ──
                 return (
                   <>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontFamily: "var(--font-display)", fontSize: 13, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
-                        {currentEvent.match_count} {isDoubles ? "pair " : isTeam ? "team " : ""}matches
-                      </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        {currentEvent.format === "direct_knockout" && (
-                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
-                            <input type="checkbox" checked={thirdPlace} onChange={e => setThirdPlace(e.target.checked)} style={{ cursor: "pointer" }} />
-                            3rd place match
-                          </label>
-                        )}
-                        <button className="btn btn-primary" onClick={handleGenerateFixtures}>Regenerate Fixtures</button>
-                      </div>
-                    </div>
+                    {!isCompleted && (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+                          <span style={{ fontFamily: "var(--font-display)", fontSize: 13, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                            {currentEvent.match_count} {isDoubles ? "pair " : isTeam ? "team " : ""}matches
+                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            {currentEvent.format === "direct_knockout" && (
+                              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
+                                <input type="checkbox" checked={thirdPlace} onChange={e => setThirdPlace(e.target.checked)} style={{ cursor: "pointer" }} />
+                                3rd place match
+                              </label>
+                            )}
+                            <button className="btn btn-primary" onClick={handleGenerateFixtures}>Regenerate Fixtures</button>
+                          </div>
+                        </div>
 
-                    <ManualMatchCreator
-                      format={currentEvent.format}
-                      groups={currentEvent.groups || []}
-                      participants={allParticipants}
-                      isTeam={isTeam || isDoubles}
-                      onCreate={handleCreateMatch}
-                      flash={flash}
-                      eligibleIds={
-                        // Direct knockout: each player appears once in the bracket,
-                        // so hide anyone already placed. Round robin allows repeats.
-                        currentEvent.format === "direct_knockout"
-                          ? new Set(
-                              allParticipants
-                                .map(p => String(p.id))
-                                .filter(id => !(currentEvent.matches || []).some(m =>
-                                  [m.player_1, m.player_2].some(mp =>
-                                    String(mp?.player_id ?? mp?.team_id) === id)))
-                            )
-                          : null
-                      }
-                    />
+                        <ManualMatchCreator
+                          format={currentEvent.format}
+                          groups={currentEvent.groups || []}
+                          participants={allParticipants}
+                          isTeam={isTeam || isDoubles}
+                          onCreate={handleCreateMatch}
+                          flash={flash}
+                          eligibleIds={
+                            // Direct knockout: each player appears once in the bracket,
+                            // so hide anyone already placed. Round robin allows repeats.
+                            currentEvent.format === "direct_knockout"
+                              ? new Set(
+                                  allParticipants
+                                    .map(p => String(p.id))
+                                    .filter(id => !(currentEvent.matches || []).some(m =>
+                                      [m.player_1, m.player_2].some(mp =>
+                                        String(mp?.player_id ?? mp?.team_id) === id)))
+                                )
+                              : null
+                          }
+                        />
+                      </>
+                    )}
 
                     {currentEvent.format === "direct_knockout" ? (
                       <KnockoutBracket matches={currentEvent.matches} onAction={handleMatchAction} onSetConfig={handleSetConfig} onEndMatch={handleEndMatch} sportKey={currentEvent.sport_key} />
@@ -1032,7 +1132,8 @@ export default function EventWorkspace() {
               })()
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* ══ STANDINGS (round_robin / group_knockout) ═══════════ */}
         {tab === "standings" && (
@@ -1102,6 +1203,8 @@ export default function EventWorkspace() {
               ));
             })()}
           </div>
+        )}
+        </>
         )}
       </div>
 
@@ -1766,7 +1869,7 @@ function ManualMatchCreator({ format, groups = [], participants = [], isTeam, on
 // Group stage = single-elimination bracket per group (with byes).
 // Championship stage = knockout bracket seeded from group winners/runners-up.
 function GroupKnockoutFixtures({
-  event, numGroups, setNumGroups, qualifiersPerGroup, setQualifiersPerGroup,
+  event, isCompleted = false, numGroups, setNumGroups, qualifiersPerGroup, setQualifiersPerGroup,
   thirdPlace, setThirdPlace, onGenerateGroups, onGenerateKnockout,
   onAction, onSetConfig, onEndMatch, sportKey, participantType,
   participants = [], isTeamEvent = false, onCreateMatch, onManualGroupSetup, flash,
@@ -1854,20 +1957,20 @@ function GroupKnockoutFixtures({
             : <><strong style={{ color: "var(--ink)" }}>{doneGroup}/{groupMatches.length}</strong> group matches played</>
           }
         </div>
-        {hasKnockout && (
+        {!isCompleted && hasKnockout && (
           <button className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }} onClick={onGenerateKnockout}>
             Regenerate Championship
           </button>
         )}
-        {!hasKnockout && (
+        {!isCompleted && !hasKnockout && (
           <button className="btn btn-outline btn-sm" style={{ fontSize: 11, color: "var(--muted)" }} onClick={onGenerateGroups}>
             Reset Groups
           </button>
         )}
       </div>
 
-      {/* Manual match creator */}
-      {onCreateMatch && (
+      {/* Manual match creator — hidden once the tournament is completed */}
+      {!isCompleted && onCreateMatch && (
         <ManualMatchCreator
           format="group_knockout"
           groups={event.groups || []}
@@ -1899,7 +2002,7 @@ function GroupKnockoutFixtures({
       })}
 
       {/* ── Generate Championship CTA (shown when all group finals done & no knockout yet) ── */}
-      {allGroupFinalsDone && !hasKnockout && (
+      {!isCompleted && allGroupFinalsDone && !hasKnockout && (
         <div className="card" style={{ marginTop: 8, marginBottom: 8, background: "linear-gradient(135deg, var(--primary-dim) 0%, rgba(255,107,53,0.05) 100%)", border: "2px solid var(--primary)", borderRadius: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -2272,6 +2375,9 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
               </span>
             )}
             {isDone && <span className="pill pill-green" style={{ padding: "1px 5px", fontSize: 8 }}>DONE</span>}
+            {m.status === "scheduled" && (
+              <span className="pill pill-gray sched-pill-mobile" style={{ padding: "1px 5px", fontSize: 8 }}>SCHEDULED</span>
+            )}
           </div>
           {isLive && sportKey === "cricket"  && ls.overs  && <div style={{ fontSize: 9, color: "var(--primary)", fontWeight: 700, marginTop: 2 }}>{ls.overs} ov</div>}
           {isLive && sportKey === "football" && ls.minute && <div style={{ fontSize: 9, color: "var(--primary)", fontWeight: 700, marginTop: 2 }}>{ls.minute}'</div>}
@@ -2292,7 +2398,7 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
               fontSize: 10, padding: "2px 7px", borderRadius: 3,
               fontWeight: 800, fontFamily: "var(--font-display)",
               background: s.is_complete ? "var(--primary-dim)" : "var(--gold-dim)",
-              color:      s.is_complete ? "var(--primary)"     : "var(--gold)",
+              color:      s.is_complete ? "var(--primary)"     : "var(--gold-text)",
             }}>
               S{s.set_number}: {s.score_p1}–{s.score_p2}
             </span>
@@ -2310,14 +2416,14 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
             </span>
           ))}
           {sets.length === 2 && sets[0]?.is_complete && !sets[1]?.is_complete && (
-            <span style={{ color: "var(--gold)", fontWeight: 700 }}>Target: {sets[0].score_p1 + 1}</span>
+            <span style={{ color: "var(--gold-text)", fontWeight: 700 }}>Target: {sets[0].score_p1 + 1}</span>
           )}
         </div>
       )}
 
       {/* ── Winner label ── */}
       {isDone && (
-        <div style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: 0.5, color: "var(--gold)" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: 0.5, color: "var(--gold-text)" }}>
           {m.player_1?.is_winner ? m.player_1.name : m.player_2?.is_winner ? m.player_2.name : "Draw"}
         </div>
       )}
@@ -2372,12 +2478,12 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
                 </div>
               )}
               {m.status === "scheduled" && (
-                <button className="btn btn-sm btn-danger" style={{ padding: "4px 12px" }}
+                <button className="btn btn-sm btn-danger match-primary-action" style={{ padding: "4px 12px" }}
                   onClick={() => onAction(m.match_id, "start")}>▶ Start</button>
               )}
               {isLive && !endMatchMode && (
                 <>
-                  <button className="btn btn-sm btn-danger" style={{ padding: "4px 12px" }}
+                  <button className="btn btn-sm btn-danger match-primary-action" style={{ padding: "4px 12px" }}
                     onClick={() => onAction(m.match_id, "score")}>Score</button>
                   <button className="btn btn-sm btn-outline" style={{ padding: "4px 10px", fontSize: 11, color: "var(--muted)" }}
                     onClick={() => setEndMatchMode(true)}>End Match</button>
@@ -2399,7 +2505,7 @@ function MatchCard({ match: m, onAction, onSetConfig, onEndMatch, sportKey }) {
                 </div>
               )}
               {isDone && (
-                <button className="btn btn-sm btn-outline" style={{ padding: "4px 12px" }}
+                <button className="btn btn-sm btn-outline match-primary-action" style={{ padding: "4px 12px" }}
                   onClick={() => onAction(m.match_id, "rematch")}>Rematch</button>
               )}
               {!isDone && (

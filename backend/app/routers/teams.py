@@ -5,16 +5,18 @@ Used by both organisers (admin panel) and public team registration.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
+from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.user import User
 from app.models.player import Team, TeamMember
 from app.models.group import EventParticipant
-from app.models.organization import Organization, OrgMember
+from app.models.organization import Organization
 from app.models.event import Event
 from app.models.tournament import Tournament
 from app.utils.auth import get_current_user
+from app.utils.tournament_access import require_org_access, require_event_access
 from app.utils.ratelimit import public_registration_limiter
 
 router = APIRouter()
@@ -90,13 +92,7 @@ def create_team(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    if not getattr(user, "is_superadmin", False):
-        member = db.query(OrgMember).filter(
-            OrgMember.org_id == org_id,
-            OrgMember.user_id == user.user_id
-        ).first()
-        if not member:
-            raise HTTPException(status_code=403, detail="Not authorized for this organization")
+    require_org_access(org_id, user, db, allow_tournament_members=True)
 
     team = Team(
         org_id=org_id,
@@ -130,6 +126,8 @@ def list_org_teams(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # SEC-5: team rosters include contact phone numbers — restrict to org access
+    require_org_access(org_id, user, db, allow_tournament_members=True)
     query = db.query(Team).filter(Team.org_id == org_id).options(joinedload(Team.members))
     if sport_key:
         query = query.filter(Team.sport_key == sport_key)
@@ -146,14 +144,9 @@ def delete_team(
     team = db.query(Team).filter(Team.team_id == team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
-    # SEC-4: verify the caller owns the org this team belongs to
-    if team.org_id and not user.is_superadmin:
-        member = db.query(OrgMember).filter(
-            OrgMember.org_id == team.org_id,
-            OrgMember.user_id == user.user_id,
-        ).first()
-        if not member:
-            raise HTTPException(status_code=403, detail="Not authorized to delete this team")
+    # SEC-4: verify the caller may manage this org's teams
+    if team.org_id:
+        require_org_access(team.org_id, user, db, allow_tournament_members=True)
     db.delete(team)
     db.commit()
     return {"ok": True}
@@ -170,9 +163,8 @@ def add_team_to_event(
     user: User = Depends(get_current_user),
 ):
     """Enroll an existing team in an event."""
-    event = db.query(Event).filter(Event.event_id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+    # SEC-6: enrolling mutates the event — require tournament access
+    event, _, _ = require_event_access(event_id, user, db)
 
     # Accept both "team" and "doubles_pair" — doubles_pair is stored as "team"
     # but old events created before the fix may still have "doubles_pair" in the DB
@@ -209,6 +201,7 @@ def remove_team_from_event(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    require_event_access(event_id, user, db)
     ep = db.query(EventParticipant).filter(
         EventParticipant.event_id == event_id,
         EventParticipant.team_id == team_id,
@@ -234,6 +227,8 @@ def get_event_teams(event_id: int, db: Session = Depends(get_db)):
             "ep_id":    ep.ep_id,
             "group_id": ep.group_id,
             "team":     _serialize_team(ep.team) if ep.team else None,
+            "payment_status":         ep.payment_status,
+            "payment_screenshot_url": ep.payment_screenshot_url,
         }
         for ep in eps
     ]
@@ -253,6 +248,7 @@ class PublicTeamRegistration(BaseModel):
     event_id:      Optional[int] = None   # singular — doubles form
     event_ids:     List[int]     = []     # plural   — team form
     members:       List[TeamMemberIn]
+    payment_screenshot_url: Optional[str] = None
 
 
 @router.post("/public/tournaments/{tournament_id}/register-team",
@@ -264,7 +260,7 @@ def public_register_team(
 ):
     """
     Public registration for teams (cricket/football) and doubles pairs (TT/badminton).
-    No auth required. Tournament must be in 'registration' status.
+    No auth required. Tournament must currently have registration open.
     """
     tournament = db.query(Tournament).filter(
         Tournament.tournament_id == tournament_id,
@@ -272,8 +268,14 @@ def public_register_team(
     ).first()
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
-    if tournament.status != "registration":
+    if not tournament.registration_open:
         raise HTTPException(status_code=400, detail="Tournament is not accepting registrations")
+
+    if tournament.payment_enabled and not data.payment_screenshot_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment screenshot is required to complete registration.",
+        )
 
     # ── Normalise name (doubles sends "name", teams send "team_name")
     team_display_name = (data.name or data.team_name or "").strip()
@@ -344,6 +346,11 @@ def public_register_team(
             ))
 
     # ── Enrol in target events
+    if tournament.payment_enabled:
+        pay_status, pay_url, pay_submitted = "pending", data.payment_screenshot_url, datetime.now(timezone.utc)
+    else:
+        pay_status, pay_url, pay_submitted = "not_required", None, None
+
     enrolled = []
     for event in target_events:
         already = db.query(EventParticipant).filter(
@@ -352,7 +359,12 @@ def public_register_team(
         ).first()
         if already:
             continue
-        db.add(EventParticipant(event_id=event.event_id, team_id=team.team_id))
+        db.add(EventParticipant(
+            event_id=event.event_id, team_id=team.team_id,
+            payment_status=pay_status,
+            payment_screenshot_url=pay_url,
+            payment_submitted_at=pay_submitted,
+        ))
         enrolled.append(event.event_id)
 
     db.commit()

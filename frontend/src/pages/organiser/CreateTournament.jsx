@@ -232,6 +232,20 @@ export default function CreateTournament() {
     else setStep(s => Math.max(s - 1, 1));
   };
 
+  // Tap a card, move on automatically — no extra "Continue" click for
+  // single-choice steps (Type, Structure for single-sport).
+  const pickType = (multi) => {
+    setIsMultiSport(multi);
+    setEvents([]);
+    setError("");
+    setTimeout(() => setStep(2), 280);
+  };
+
+  const pickStructure = (i, value) => {
+    updateEvent(i, { format: value });
+    if (!isMultiSport) setTimeout(() => setStep(4), 280);
+  };
+
   const handleCityChange = (c) => {
     setCity(c);
     setState(c ? (CITY_STATE_MAP[c] || "") : "");
@@ -326,6 +340,32 @@ export default function CreateTournament() {
   const displaySteps = isMultiSport ? STEPS_MULTI : STEPS_SINGLE;
   const displayStep  = isMultiSport ? (MULTI_DISPLAY[step] || 1) : step;
 
+  // Big headline used for every step — replaces the old "Step N — Title" card-title.
+  const StepHeading = ({ text }) => (
+    <h2 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 900, letterSpacing: -0.5, color: c.ink, margin: "0 0 6px", lineHeight: 1.15 }}>
+      {text}
+    </h2>
+  );
+
+  // Review consolidation for single-sport (multi-sport keeps the flat rows —
+  // there's no format/participant-type chosen yet to consolidate).
+  const singleEv = !isMultiSport ? events[0] : null;
+  const singleSf = singleEv ? getSubformat(singleEv.sport_key, singleEv.subformat_key) : null;
+  const reviewRows = (!isMultiSport && singleEv)
+    ? [
+        ["Sport & Format", `${sl(singleEv.sport_key)}${singleSf ? " · " + singleSf.label : ""}`, 2],
+        ["Structure",      singleEv.format ? fl(singleEv.format) : "—", 3],
+        ["Name",           name, 4],
+        ["Location",       [venue, city, state].filter(Boolean).join(", ") || "—", 4],
+      ]
+    : [
+        ["Organisation", activeOrg?.name, null],
+        ["Name",         name,            4],
+        ["Type",         isMultiSport ? "Multi-Sport" : "Single Sport", 1],
+        venue     && ["Venue",      venue + (venueLat ? ` 📍` : ""), 4],
+        city      && ["City",       [city, state].filter(Boolean).join(", "), 4],
+      ].filter(Boolean);
+
   if (loadingOrgs) return <PageLoader />;
 
   return (
@@ -384,33 +424,14 @@ export default function CreateTournament() {
           {/* ── PROGRESS BAR ── */}
           <div style={{ background: c.surface, borderBottom: `1px solid ${c.border}`, padding: "14px 0" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "0 24px" }} className="progress-container">
-              <div style={{ display: "flex", alignItems: "flex-start" }}>
-                {displaySteps.map((label, i) => {
-                  const n      = i + 1;
-                  const pState = n < displayStep ? "done" : n === displayStep ? "active" : "pending";
-                  return (
-                    <div key={label} style={{ display: "flex", alignItems: "flex-start", flex: 1 }}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                        <div style={{
-                          width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                          fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 800,
-                          background: pState === "done" ? c.orange : pState === "active" ? c.gold : c.surface,
-                          color:      pState === "done" ? c.bg    : pState === "active" ? c.bg   : c.muted,
-                          border:     pState === "pending" ? `2px solid ${c.border}` : "none",
-                          boxShadow:  pState === "active" ? `0 0 0 3px ${c.dim}` : "none",
-                        }}>
-                          {pState === "done" ? "✓" : n}
-                        </div>
-                        <span className="step-label" style={{ fontFamily: "var(--font-display)", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginTop: 4, color: pState === "pending" ? c.muted : pState === "active" ? c.gold : c.orange, textAlign: "center", whiteSpace: "nowrap" }}>
-                          {label}
-                        </span>
-                      </div>
-                      {i < displaySteps.length - 1 && (
-                        <div style={{ flex: 1, height: 2, margin: "13px 4px 0", background: pState === "done" ? c.orange : c.border }} />
-                      )}
-                    </div>
-                  );
-                })}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                <span style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: c.orange }}>
+                  Step {displayStep} · {displaySteps[displayStep - 1]}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: c.muted }}>{displayStep}/{displaySteps.length}</span>
+              </div>
+              <div style={{ height: 4, borderRadius: 2, background: c.border, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${(displayStep / displaySteps.length) * 100}%`, background: c.orange, transition: "width .25s" }} />
               </div>
             </div>
           </div>
@@ -426,14 +447,14 @@ export default function CreateTournament() {
             {/* ── STEP 1: Type ── */}
             {step === 1 && (
               <div className="card">
-                <div className="card-title">Step 1 — Tournament Type</div>
-                <p style={{ fontSize: 13, color: c.muted, marginBottom: 18 }}>Run one sport or combine multiple sports under one event.</p>
+                <StepHeading text="Run one sport or several?" />
+                <p style={{ fontSize: 13, color: c.muted, marginBottom: 18 }}>Tap a card — we'll move you on automatically.</p>
                 {[
                   { multi: false, label: "1", title: "Single Sport", sub: "One sport bracket — e.g. Football 5-a-side" },
                   { multi: true,  label: "M", title: "Multi Sport",  sub: "Multiple sports — e.g. Football + Cricket + TT" },
                 ].map(({ multi, label, title, sub }) => (
                   <div key={String(multi)} style={selStyle(isMultiSport === multi)}
-                    onClick={() => { setIsMultiSport(multi); setEvents([]); }}>
+                    onClick={() => pickType(multi)}>
                     <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 900, marginBottom: 6, color: isMultiSport === multi ? c.orange : c.muted }}>{label}</div>
                     <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, textTransform: "uppercase", letterSpacing: -0.5, color: isMultiSport === multi ? c.orange : c.ink }}>
                       {title}
@@ -441,22 +462,17 @@ export default function CreateTournament() {
                     <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{sub}</div>
                   </div>
                 ))}
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-                  <button className="btn btn-primary" onClick={next}>Continue →</button>
-                </div>
               </div>
             )}
 
             {/* ── STEP 2: Sport selection ── */}
             {step === 2 && (
               <div className="card">
-                <div className="card-title">
-                  {isMultiSport ? "Step 2 — Select Sports" : "Step 2 — Sport & Format"}
-                </div>
+                <StepHeading text={isMultiSport ? "Select your sports" : "Pick your sport"} />
                 <p style={{ fontSize: 13, color: c.muted, marginBottom: 18 }}>
                   {isMultiSport
                     ? "Choose all sports for this tournament. Formats and detailed settings are configured after creation."
-                    : "Pick your sport and format."}
+                    : "Format choices appear right below — no extra screen."}
                 </p>
 
                 {/* Sport grid */}
@@ -581,8 +597,8 @@ export default function CreateTournament() {
             {/* ── STEP 3: Match structure — single sport only ── */}
             {step === 3 && (
               <div className="card">
-                <div className="card-title">Step 3 — Match Structure</div>
-                <p style={{ fontSize: 13, color: c.muted, marginBottom: 18 }}>How matches are organised within each event.</p>
+                <StepHeading text="How should matches run?" />
+                <p style={{ fontSize: 13, color: c.muted, marginBottom: 18 }}>Tap a card — we'll move you on automatically.</p>
 
                 {events.map((ev, i) => {
                   const sf = getSubformat(ev.sport_key, ev.subformat_key);
@@ -596,7 +612,7 @@ export default function CreateTournament() {
                       {FORMATS.map(f => (
                         <div key={f.value}
                           style={{ ...selStyle(ev.format === f.value), padding: "12px 14px", marginBottom: 6 }}
-                          onClick={() => updateEvent(i, { format: f.value })}>
+                          onClick={() => pickStructure(i, f.value)}>
                           <div style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: -0.5, color: ev.format === f.value ? c.orange : c.ink }}>
                             {f.label}
                           </div>
@@ -607,9 +623,8 @@ export default function CreateTournament() {
                   );
                 })}
 
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 8 }}>
                   <button className="btn btn-outline" onClick={back}>← Back</button>
-                  <button className="btn btn-primary" onClick={next} disabled={!events.every(e => e.format)}>Continue →</button>
                 </div>
               </div>
             )}
@@ -617,10 +632,8 @@ export default function CreateTournament() {
             {/* ── STEP 4: Details ── */}
             {step === 4 && (
               <div className="card">
-                <div className="card-title">
-                  {isMultiSport ? "Step 3 — Tournament Details" : "Step 4 — Tournament Details"}
-                </div>
-                <p style={{ fontSize: 13, color: c.muted, marginBottom: 18 }}>Name your tournament and add location info.</p>
+                <StepHeading text="Name it & set the venue" />
+                <p style={{ fontSize: 13, color: c.muted, marginBottom: 18 }}>Just two fields — everything else is optional.</p>
 
                 <div className="field">
                   <label>Tournament Name *</label>
@@ -660,25 +673,26 @@ export default function CreateTournament() {
             {/* ── STEP 5: Review ── */}
             {step === 5 && (
               <div className="card">
-                <div className="card-title">
-                  {isMultiSport ? "Step 4 — Review & Create" : "Step 5 — Review & Create"}
-                </div>
-                <p style={{ fontSize: 13, color: c.muted, marginBottom: 20 }}>Double-check everything before creating.</p>
+                <StepHeading text="Look good?" />
+                <p style={{ fontSize: 13, color: c.muted, marginBottom: 20 }}>Tap any row to jump back and change it.</p>
 
-                {[
-                  ["Organisation", activeOrg?.name],
-                  ["Name",         name],
-                  ["Type",         isMultiSport ? "Multi-Sport" : "Single Sport"],
-                  venue     && ["Venue",      venue + (venueLat ? ` 📍` : "")],
-                  city      && ["City",       [city, state].filter(Boolean).join(", ")],
-                ].filter(Boolean).map(([k, v]) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "8px 0", borderBottom: `1px solid ${c.border}` }}>
+                {reviewRows.map(([k, v, targetStep]) => (
+                  <div key={k}
+                    onClick={targetStep ? () => setStep(targetStep) : undefined}
+                    style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+                      padding: "8px 0", borderBottom: `1px solid ${c.border}`,
+                      cursor: targetStep ? "pointer" : "default",
+                    }}>
                     <span style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: c.muted }}>{k}</span>
                     <span style={{ fontSize: 13, fontWeight: 600, color: c.ink, textAlign: "right" }}>{v}</span>
                   </div>
                 ))}
 
-                <div style={{ background: "var(--elevated)", border: `1px solid ${c.border}`, borderRadius: 8, padding: "14px 16px", marginTop: 16 }}>
+                <div
+                  onClick={() => setStep(2)}
+                  style={{ background: "var(--elevated)", border: `1px solid ${c.border}`, borderRadius: 8, padding: "14px 16px", marginTop: 16, cursor: "pointer" }}
+                >
                   <div style={{ fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 2, color: c.orange, marginBottom: 12 }}>
                     Events ({events.length})
                   </div>

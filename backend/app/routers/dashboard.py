@@ -9,11 +9,40 @@ from app.database import get_db
 from app.models.user import User
 from app.models.organization import Organization, OrgMember
 from app.models.tournament import Tournament
+from app.models.tournament_member import TournamentMember
 from app.models.event import Event
 from app.utils.auth import get_current_user
 from app.utils.roles import compute_roles
 
 router = APIRouter()
+
+
+def _serialize_dashboard_tournament(t: Tournament) -> dict:
+    return {
+        "tournament_id": t.tournament_id,
+        "org_id":        t.org_id,
+        "name":          t.name,
+        "slug":          t.slug,
+        "status":        t.status,
+        "registration_open": t.registration_open,
+        "venue":         t.venue,
+        "city":          t.city,
+        "state":         t.state,
+        "start_date":    str(t.start_date) if t.start_date else None,
+        "end_date":      str(t.end_date)   if t.end_date   else None,
+        "poster_url":    t.poster_url,
+        "logo_url":      t.logo_url,
+        "events": [
+            {
+                "event_id":  e.event_id,
+                "name":      e.name,
+                "sport_key": e.sport_key,
+                "format":    e.format,
+                "status":    e.status,
+            }
+            for e in (t.events or [])
+        ],
+    }
 
 
 @router.get("")
@@ -47,30 +76,27 @@ def get_dashboard(
     # Group tournaments by org
     by_org: dict[int, list] = {o.org_id: [] for o in orgs}
     for t in tournaments:
-        by_org[t.org_id].append({
-            "tournament_id": t.tournament_id,
-            "org_id":        t.org_id,
-            "name":          t.name,
-            "slug":          t.slug,
-            "status":        t.status,
-            "venue":         t.venue,
-            "city":          t.city,
-            "state":         t.state,
-            "start_date":    str(t.start_date) if t.start_date else None,
-            "end_date":      str(t.end_date)   if t.end_date   else None,
-            "poster_url":    t.poster_url,
-            "logo_url":      t.logo_url,
-            "events": [
-                {
-                    "event_id":  e.event_id,
-                    "name":      e.name,
-                    "sport_key": e.sport_key,
-                    "format":    e.format,
-                    "status":    e.status,
-                }
-                for e in (t.events or [])
-            ],
-        })
+        by_org[t.org_id].append(_serialize_dashboard_tournament(t))
+
+    # Tournaments shared with the user via TournamentMember (invited access),
+    # excluding tournaments they already see through their own orgs.
+    shared_q = (
+        db.query(TournamentMember, Tournament)
+        .join(Tournament, Tournament.tournament_id == TournamentMember.tournament_id)
+        .options(joinedload(Tournament.events), joinedload(Tournament.organization))
+        .filter(TournamentMember.user_id == user.user_id)
+    )
+    if org_ids:
+        shared_q = shared_q.filter(~Tournament.org_id.in_(org_ids))
+    shared_rows = shared_q.order_by(Tournament.created_at.desc()).all()
+    shared_tournaments = [
+        {
+            **_serialize_dashboard_tournament(t),
+            "my_role":  tm.role,
+            "org_name": t.organization.name if t.organization else None,
+        }
+        for tm, t in shared_rows
+    ]
 
     return {
         "user": {
@@ -93,4 +119,5 @@ def get_dashboard(
             }
             for o in orgs
         ],
+        "shared_tournaments": shared_tournaments,
     }

@@ -15,7 +15,12 @@
    
      --gold:              #FFCC00;
      --gold-dim:          rgba(255, 204, 0, 0.15);
-   
+     /* Bright gold reads fine on dark surfaces but is low-contrast on light
+        ones — use this wherever gold is rendered as TEXT (winner names,
+        scores, captain chips). Backgrounds/borders can keep using --gold
+        directly since --gold-dim already accounts for both themes. */
+     --gold-text:         #92700A;
+
      --red:               #e53e3e;
      --red-dim:           rgba(229, 62, 62, 0.12);
    
@@ -96,6 +101,7 @@
      --primary-dim:       rgba(255, 107, 53, 0.15);
      --primary-glow:      0 0 24px rgba(255, 107, 53, 0.35);
      --gold-dim:          rgba(255, 204, 0, 0.12);
+     --gold-text:         var(--gold);
    
      --gradient-bg:       linear-gradient(135deg, #1a0a05 0%, #1a1a1a 100%);
      --gradient-glow:     radial-gradient(circle at 20% 50%, rgba(255, 107, 53, 0.15) 0%, transparent 60%);
@@ -610,8 +616,8 @@
      flex: 1;
    }
    .match-pname.right { text-align: right; }
-   .match-pname.winner { color: var(--gold); }
-   
+   .match-pname.winner { color: var(--gold-text); }
+
    .match-score {
      font-family: var(--font-display);
      font-size: 22px;
@@ -620,7 +626,7 @@
      text-align: center;
      line-height: 1;
    }
-   .match-score.done-score { color: var(--gold); }
+   .match-score.done-score { color: var(--gold-text); }
    .match-score.vs-score   { color: var(--border-mid); font-size: 14px; }
    
    .match-actions { display: flex; gap: 6px; margin-top: 10px; justify-content: flex-end; }
@@ -1030,7 +1036,7 @@
    }
    .roster-chip.captain {
      background: var(--gold-dim);
-     color: var(--gold);
+     color: var(--gold-text);
      border-color: rgba(255,204,0,0.3);
    }
    
@@ -1585,7 +1591,19 @@
   .landing-hero { padding: 40px 16px 28px !important; }
   .landing-hero h1 { font-size: 28px !important; }
   .landing-hero p { font-size: 15px !important; }
+
+  /* ── Match card (Fixtures list) — big full-width primary action ── */
+  .match-row .match-primary-action {
+    width: 100%;
+    padding: 13px 0 !important;
+    font-size: 13px !important;
+    font-weight: 800;
+    border-radius: 8px;
+    margin-top: 4px;
+  }
+  .sched-pill-mobile { display: inline-flex !important; }
 }
+.sched-pill-mobile { display: none; }
 @media (max-width: 640px) {
   .landing-stats-grid { grid-template-columns: repeat(2, 1fr); }
 }

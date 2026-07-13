@@ -1,19 +1,14 @@
 /**
  * RoadToFinal — symmetric knockout bracket.
  *
- * Desktop:
- *   5 columns  (QF data present): leftQF | leftSF | Final | rightSF | rightQF
- *   3 columns  (SF only):         leftSF | Final | rightSF
- *   1 column   (Final only):      Final
- *
- * Each column uses absolute positioning inside a fixed-width container.
- * SVG paths draw the connector lines between rounds.
- *
- * Mobile: vertical stack, same BracketCard design, no SVG lines.
+ * Desktop: column layout (5/3/1 columns depending on bracket depth —
+ * leftQF | leftSF | Final | rightSF | rightQF, or a subset), absolutely
+ * positioned inside a fixed-width container with SVG connector lines.
+ * Mobile: vertical stack — one full-width card per match, grouped by round,
+ * scrolling down the page like the rest of the site (no horizontal swipe).
  *
  * Stage names from backend: quarter | semi | final | third_place
  */
-import { useState, useEffect } from "react";
 
 // ── Layout constants ──────────────────────────────────────────
 const CW = 192;  // card width  (px)
@@ -32,14 +27,17 @@ const tbdMatch = id => ({
 });
 
 // ── Bracket Card ──────────────────────────────────────────────
+// Stadium Lights, strictly: white surfaces, orange accents, black/gray text.
+// No dark novelty fills for any match state — Live gets an orange tint,
+// Completed is told apart by a black border + bold winner name, not a
+// separate background color.
 function BracketCard({ match: m, fullWidth }) {
   const done = m.status === "done";
   const live = m.status === "live";
 
-  const hBg  = done ? "#1b3d1e" : live ? "#7c1d0c" : "var(--elevated)";
-  const hTxt = done ? "#6ee07a" : live ? "#fca5a5" : "var(--muted)";
-  const bBg  = done ? "#243824" : live ? "#3d1008" : "var(--surface)";
-  const bdr  = done ? "#2a5030" : live ? "#7c1d0c" : "var(--border)";
+  const hBg  = live ? "var(--primary-dim)" : "var(--elevated)";
+  const hTxt = live ? "var(--primary)" : done ? "var(--ink)" : "var(--muted)";
+  const bdr  = live ? "var(--primary)" : done ? "var(--ink)" : "var(--border)";
 
   const rows = [
     { n: m.player_1?.name || "TBD", s: m.player_1?.score, won: done && !!m.player_1?.is_winner },
@@ -52,8 +50,9 @@ function BracketCard({ match: m, fullWidth }) {
       border:     `1.5px solid ${bdr}`,
       borderRadius: 9,
       overflow:   "hidden",
-      boxShadow:  "0 2px 10px rgba(0,0,0,.16)",
+      boxShadow:  "0 1px 4px rgba(0,0,0,.06)",
       flexShrink: 0,
+      background: "var(--surface)",
     }}>
       {/* Status header */}
       <div style={{
@@ -83,10 +82,8 @@ function BracketCard({ match: m, fullWidth }) {
           height:      35,
           display:     "flex", alignItems: "center", justifyContent: "space-between",
           padding:     "0 10px",
-          background:  bBg,
-          borderTop:   i > 0
-            ? `1px solid ${done ? "rgba(255,255,255,.07)" : "var(--border)"}`
-            : "none",
+          background:  "var(--surface)",
+          borderTop:   i > 0 ? "1px solid var(--border)" : "none",
           overflow: "hidden",
         }}>
           <span style={{
@@ -94,7 +91,7 @@ function BracketCard({ match: m, fullWidth }) {
             fontSize:       12,
             fontWeight:     done && p.won ? 700 : 500,
             color:          done
-              ? (p.won ? "#fff" : "rgba(255,255,255,.3)")
+              ? (p.won ? "var(--ink)" : "var(--muted)")
               : (isTBD(p.n) ? "var(--muted)" : "var(--ink)"),
             textDecoration: done && !p.won && !isTBD(p.n) ? "line-through" : "none",
             fontStyle:      isTBD(p.n) ? "italic" : "normal",
@@ -112,7 +109,7 @@ function BracketCard({ match: m, fullWidth }) {
               fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 900,
               flexShrink: 0, marginLeft: 8,
               color: done
-                ? (p.won ? "#6ee07a" : "rgba(255,255,255,.28)")
+                ? (p.won ? "var(--primary, #FF6B35)" : "var(--muted)")
                 : "var(--primary, #FF6B35)",
             }}>
               {p.s}
@@ -156,9 +153,9 @@ function BracketLegend() {
       flexWrap: "wrap",
     }}>
       {[
-        { bg: "var(--elevated)", bd: "var(--border)", label: "Scheduled" },
-        { bg: "#7c1d0c",         bd: "#7c1d0c",        label: "Live"      },
-        { bg: "#1b3d1e",         bd: "#2a5030",         label: "Completed" },
+        { bg: "var(--elevated)",    bd: "var(--border)",  label: "Scheduled" },
+        { bg: "var(--primary-dim)", bd: "var(--primary)", label: "Live"      },
+        { bg: "var(--surface)",     bd: "var(--ink)",     label: "Completed" },
       ].map(s => (
         <div key={s.label} style={{
           display: "flex", alignItems: "center", gap: 7,
@@ -196,35 +193,87 @@ function EmptyBracket({ format }) {
   );
 }
 
+// ── Pair connector — shows two matches merging into the next round's slot ──
+// Card height is fixed (26 header + 35 + 35 = 96px) regardless of width, so
+// the merge point can be computed precisely even though width is fluid.
+function PairConnector({ gap }) {
+  const H = 96;
+  const totalH = H * 2 + gap;
+  const c1  = H / 2;
+  const c2  = H + gap + H / 2;
+  const mid = H + gap / 2;
+  return (
+    <svg width="20" height={totalH} viewBox={`0 0 20 ${totalH}`} style={{ display: "block", flexShrink: 0 }}>
+      <path d={`M10 ${c1} V${mid} H20`} fill="none" stroke="var(--border)" strokeWidth="2" />
+      <path d={`M10 ${c2} V${mid}`}     fill="none" stroke="var(--border)" strokeWidth="2" />
+      <circle cx="20" cy={mid} r="3.5" fill="var(--primary)" />
+    </svg>
+  );
+}
+
+// ── Advance arrow — points from a completed round down to the next one ──
+function AdvanceArrow() {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 10px" }}>
+      <svg width="14" height="22" viewBox="0 0 14 22">
+        <path d="M7 0 V16" stroke="var(--border)" strokeWidth="2" />
+        <path d="M2 13 L7 19 L12 13" fill="none" stroke="var(--border)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+const PAIR_GAP = 18;
+
+// ── A round's matches, paired up with connector lines showing which two
+// feed into a single slot in the next round ──
+function PairedRound({ matches }) {
+  const pairs = [];
+  for (let i = 0; i < matches.length; i += 2) pairs.push(matches.slice(i, i + 2));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {pairs.map((pair, i) => (
+        <div key={pair[0].match_id} style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+          {pair.length === 2 && <PairConnector gap={PAIR_GAP} />}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: PAIR_GAP }}>
+            {pair.map(m => <BracketCard key={m.match_id} match={m} fullWidth />)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Mobile vertical stack ─────────────────────────────────────
 function MobileBracket({ leftQF, rightQF, leftSF, rightSF, theFinal, thirdPlace, showQF }) {
   const stages = [
     ...(showQF ? [{
-      label: "Quarter Finals", emoji: null,
+      label: "Quarter Finals",
       matches: [...leftQF, ...rightQF],
-      color: "var(--muted)",
+      advances: true,
     }] : []),
     {
-      label: "Semi Finals", emoji: null,
+      label: "Semi Finals",
       matches: [leftSF, rightSF],
-      color: "var(--muted)",
+      advances: true,
     },
     {
       label: "Final", emoji: "🏆",
       matches: [theFinal],
-      color: "#d97706",
+      advances: false,
     },
     ...(thirdPlace ? [{
       label: "3rd Place", emoji: "🥉",
       matches: [thirdPlace],
-      color: "#b45309",
+      advances: false,
     }] : []),
   ];
 
   return (
     <div>
-      {stages.map(({ label, emoji, matches, color }) => (
-        <div key={label} style={{ marginBottom: 24 }}>
+      {stages.map(({ label, emoji, matches, advances }, i) => (
+        <div key={label} style={{ marginBottom: 12 }}>
           <div style={{
             display: "flex", alignItems: "center", gap: 8,
             marginBottom: 12, paddingBottom: 8,
@@ -233,16 +282,15 @@ function MobileBracket({ leftQF, rightQF, leftSF, rightSF, theFinal, thirdPlace,
             {emoji && <span style={{ fontSize: 16 }}>{emoji}</span>}
             <span style={{
               fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
-              textTransform: "uppercase", letterSpacing: 2, color,
+              textTransform: "uppercase", letterSpacing: 2, color: "var(--muted)",
             }}>
               {label}
             </span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {matches.map(m => (
-              <BracketCard key={m.match_id} match={m} fullWidth />
-            ))}
-          </div>
+          {matches.length > 1
+            ? <PairedRound matches={matches} />
+            : <BracketCard match={matches[0]} fullWidth />}
+          {advances && i < stages.length - 1 && <AdvanceArrow />}
         </div>
       ))}
       <BracketLegend />
@@ -475,9 +523,14 @@ function DesktopBracket1({ theFinal, thirdPlace }) {
 function EventBracket({ event, isMobile }) {
   const matches = event.all_matches || [];
 
-  // Separate third_place from knockout matches
-  const thirdPlaceAll = matches.filter(m => m.stage === "third_place");
-  const koMatches     = matches.filter(m => m.stage !== "group" && m.stage !== "third_place");
+  // group_knockout events run each group as its own mini bracket using the
+  // same generic engine as the real championship, so a group's internal
+  // matches can carry stage="semi"/"final" too — not just "group". Anything
+  // with a `group` name belongs to the group stage, not the championship;
+  // exclude it here regardless of its raw stage label.
+  const champMatches  = matches.filter(m => !m.group);
+  const thirdPlaceAll = champMatches.filter(m => m.stage === "third_place");
+  const koMatches     = champMatches.filter(m => m.stage !== "third_place");
 
   // Group by stage
   const byStage = {};
@@ -512,7 +565,7 @@ function EventBracket({ event, isMobile }) {
   const theFinal = finAll[0] || tbdMatch("fin");
   const thirdPlace = thirdPlaceAll[0] || null;
 
-  // ── Mobile ────────────────────────────────────────────────
+  // ── Mobile: vertical stack, grouped by round, scrolls down the page ──
   if (isMobile) {
     return (
       <MobileBracket
@@ -524,7 +577,7 @@ function EventBracket({ event, isMobile }) {
     );
   }
 
-  // ── Desktop ───────────────────────────────────────────────
+  // ── Desktop: column layout with connector lines ──
   if (showQF) {
     return (
       <DesktopBracket5
@@ -546,17 +599,7 @@ function EventBracket({ event, isMobile }) {
 }
 
 // ── Main export ───────────────────────────────────────────────
-export default function RoadToFinal({ events }) {
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < 768
-  );
-
-  useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", h, { passive: true });
-    return () => window.removeEventListener("resize", h);
-  }, []);
-
+export default function RoadToFinal({ events, isMobile = false }) {
   const relevant = (events || []).filter(ev =>
     ev.format === "direct_knockout" || ev.format === "group_knockout"
   );
