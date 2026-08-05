@@ -1,12 +1,14 @@
 import { Link } from "react-router-dom";
+import usePageMeta from "../hooks/usePageMeta";
 
 const EFFECTIVE_DATE = "30 May 2026";
-const CONTACT_EMAIL  = "privacy@thescoreboard.in";
+const CONTACT_EMAIL  = "teams@thescoreboard.in";
 const APP_NAME       = "TheScoreBoard";
 const COMPANY        = "TheScoreBoard";
 const WEBSITE        = "https://thescoreboard.in";
 
 export default function PrivacyPolicy() {
+  usePageMeta("Privacy Policy");
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--ink)" }}>
       {/* Nav bar */}

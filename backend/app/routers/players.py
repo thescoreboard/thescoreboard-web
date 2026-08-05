@@ -74,6 +74,18 @@ def delete_player(
     # SEC-3: verify ownership before deleting
     if player.org_id:
         _check_org_member(player.org_id, user, db)
+    # DI-3: refuse to hard-delete a player who has already appeared in matches —
+    # the match_participants FK is ON DELETE CASCADE, so deleting would silently
+    # strip them out of completed matches and corrupt history/standings.
+    from app.models.match import MatchParticipant
+    in_matches = db.query(MatchParticipant).filter(
+        MatchParticipant.player_id == player_id).first()
+    if in_matches:
+        raise HTTPException(
+            status_code=409,
+            detail="This player has match history and cannot be deleted. "
+                   "Remove them from their events instead.",
+        )
     db.delete(player)
     db.commit()
     return {"ok": True}

@@ -105,6 +105,7 @@ export default function OrgHeader({ crumbs = [], right = null, user = null, onLo
   const ThemeBtn = () => (
     <button
       onClick={toggleTheme}
+      aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
       className="theme-toggle-btn"
       style={{
         background: "none", border: "1px solid var(--border)",

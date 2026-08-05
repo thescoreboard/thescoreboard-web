@@ -176,7 +176,7 @@ export default function AdminPanel() {
             <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>{user.name}</span>
           )}
           {/* Theme toggle */}
-          <button onClick={toggleTheme} style={{
+          <button onClick={toggleTheme} aria-label="Toggle dark mode" style={{
             background: "none", border: "1px solid var(--border)", borderRadius: 6,
             width: 32, height: 32, cursor: "pointer", color: "var(--ink)",
             display: "flex", alignItems: "center", justifyContent: "center",

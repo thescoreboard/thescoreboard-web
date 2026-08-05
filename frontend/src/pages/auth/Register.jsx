@@ -5,6 +5,7 @@ import {
   getMe, setStoredUser, setMode,
 } from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
+import usePageMeta from "../../hooks/usePageMeta";
 
 // Eye / eye-off icons for the password visibility toggle
 function EyeIcon({ off }) {
@@ -47,6 +48,7 @@ function PasswordField({ value, onChange, placeholder, onKeyDown, inputStyle }) 
 }
 
 export default function Register() {
+  usePageMeta("Create Account");
   const navigate = useNavigate();
   const [form,    setForm]    = useState({ name: "", email: "", password: "", phone: "" });
   const [confirmPassword, setConfirmPassword] = useState("");

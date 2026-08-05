@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import usePageMeta from "../hooks/usePageMeta";
 
 const EFFECTIVE_DATE = "30 May 2026";
 const CONTACT_EMAIL  = "support@thescoreboard.in";
@@ -6,6 +7,7 @@ const APP_NAME       = "TheScoreBoard";
 const WEBSITE        = "https://thescoreboard.in";
 
 export default function Terms() {
+  usePageMeta("Terms of Service");
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--ink)" }}>
       {/* Nav bar */}

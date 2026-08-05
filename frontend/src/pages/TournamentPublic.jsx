@@ -11,6 +11,7 @@ import PageLoader from "../components/shared/PageLoader";
 import SiteFooter from "../components/shared/SiteFooter";
 import { ShareButton } from "../components/shared/ShareButton";
 import { useShare } from "../hooks/useShare";
+import usePageMeta from "../hooks/usePageMeta";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -788,23 +789,16 @@ function formatDeadline(iso) {
   return `${MONTHS_FULL[m - 1]} ${d}, ${y}`;
 }
 
-function TournamentInfoDisplay({ info, paymentAmount, twoCol = false }) {
-  if (!info && !paymentAmount) return null;
-  info = info || {};
+function TournamentInfoDisplay({ info, twoCol = false }) {
+  if (!info) return null;
 
-  // Entry fee display prefers the structured Payment Collection amount
-  // (also used to gate registration) over the legacy free-text field —
-  // avoids asking organisers to set the fee in two different places.
-  const entryFeeDisplay = paymentAmount ? `₹${paymentAmount}` : info.contact?.entry_fee?.trim();
-
+  // Entry fee / register-by-date live in the hero band now (single source of
+  // truth: Payment Collection's amount + the Info editor's reg_deadline) —
+  // this card only lists contact persons, to avoid showing the same info twice.
   const hasOverview = !!info.overview?.trim();
   const hasPrizes   = info.prize_pool?.length > 0;
   const hasRules    = !!info.rules?.trim();
-  const hasContact  = !!(
-    entryFeeDisplay ||
-    info.contact?.reg_deadline?.trim() ||
-    info.contact?.persons?.length > 0
-  );
+  const hasContact  = info.contact?.persons?.length > 0;
 
   if (!hasOverview && !hasPrizes && !hasRules && !hasContact) return null;
 
@@ -871,58 +865,26 @@ function TournamentInfoDisplay({ info, paymentAmount, twoCol = false }) {
           </div>
         )}
 
-        {/* Registration & Contact (entry fee) — top priority */}
+        {/* Organiser Contact — entry fee / register-by now live in the hero band */}
         {hasContact && (
           <div style={card}>
-            <div style={sectionHead}>📞 Registration & Contact</div>
-            {(entryFeeDisplay || info.contact.reg_deadline) && (
-              <div style={{ display: "flex", gap: 24, marginBottom: info.contact.persons?.length ? 14 : 0,
-                flexWrap: "wrap" }}>
-                {entryFeeDisplay && (
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 2 }}>
-                      Entry Fee
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--ink)",
-                      fontFamily: "var(--font-display)" }}>
-                      {entryFeeDisplay}
-                    </div>
-                  </div>
-                )}
-                {info.contact.reg_deadline && (
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 2 }}>
-                      Deadline
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--ink)",
-                      fontFamily: "var(--font-display)" }}>
-                      {formatDeadline(info.contact.reg_deadline) || info.contact.reg_deadline}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {info.contact.persons?.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 8 }}>
-                  Contact
+            <div style={sectionHead}>📞 Organiser Contact</div>
+            <div>
+              {info.contact.persons.map((p, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between",
+                  alignItems: "center", padding: "7px 0",
+                  borderBottom: i < info.contact.persons.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{p.name}</span>
+                  {p.phone && (
+                    <a href={`tel:${p.phone}`}
+                      style={{ fontSize: 13, color: "var(--primary, #FF6B35)", fontWeight: 700,
+                        textDecoration: "none" }}>
+                      {p.phone}
+                    </a>
+                  )}
                 </div>
-                {info.contact.persons.map((p, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between",
-                    alignItems: "center", padding: "7px 0",
-                    borderBottom: i < info.contact.persons.length - 1 ? "1px solid var(--border)" : "none" }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{p.name}</span>
-                    {p.phone && (
-                      <a href={`tel:${p.phone}`}
-                        style={{ fontSize: 13, color: "var(--primary, #FF6B35)", fontWeight: 700,
-                          textDecoration: "none" }}>
-                        {p.phone}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         )}
 
@@ -1565,6 +1527,21 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
   const locationStr = [tournament.city, tournament.state].filter(Boolean).join(", ") || null;
   const teamCount   = events.reduce((n, ev) => n + (ev.participants || []).length, 0);
 
+  // Sport + format eyebrow
+  const formatLabel = events[0]?.format ? events[0].format.replace(/_/g, " ") : null;
+
+  // Organiser identity — initials avatar (no logo upload yet, no verification concept)
+  const orgInitials = tournament.org_name
+    ? tournament.org_name.trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase()
+    : null;
+
+  // Entry fee / register-by / contact — from Payment Collection + the Info editor's contact block.
+  // Both are optional and shown only when the organiser has actually set them.
+  const contactInfo  = tournament.tournament_info?.contact || {};
+  const regDeadline  = contactInfo.reg_deadline ? formatDeadline(contactInfo.reg_deadline) : null;
+  const firstContact = contactInfo.persons?.[0] || null;
+  const hasStatsBar  = !!(tournament.payment_amount || regDeadline || firstContact);
+
   // Team abbreviation helper
   const teamAbbr = (name) => {
     if (!name || name === "TBD") return name || "?";
@@ -1595,6 +1572,17 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
         )}
 
         <div style={{ position:"relative", zIndex:2 }}>
+          {/* Sport + format eyebrow */}
+          {(sportLabel || formatLabel) && (
+            <div style={{
+              fontFamily:"var(--font-display)", fontSize:11, fontWeight:800,
+              letterSpacing:2, textTransform:"uppercase", color:"var(--primary)",
+              marginBottom:10,
+            }}>
+              {[sportLabel, formatLabel].filter(Boolean).join(" · ")}
+            </div>
+          )}
+
           {/* Tournament name */}
           <h1 style={{
             fontFamily:"var(--font-display)",
@@ -1630,22 +1618,77 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
             )}
           </div>
 
-          {/* Share button — static in hero, always visible */}
-          {slug && (
-            <div style={{ marginTop:18 }}>
+          {/* Organiser identity — initials avatar + club name (no logo/verification yet) */}
+          {tournament.org_name && (
+            <div style={{ display:"flex", alignItems:"center", gap:9, marginTop:14 }}>
+              <div style={{
+                width:30, height:30, borderRadius:"50%", flexShrink:0,
+                background:"var(--primary)", color:"#fff",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontFamily:"var(--font-display)", fontSize:11, fontWeight:900,
+              }}>
+                {orgInitials}
+              </div>
+              <span style={{ fontSize:13, fontWeight:700, color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
+                {tournament.org_name}
+              </span>
+            </div>
+          )}
+
+          {/* Share + Register CTA — availability is date-driven (registration_open), not the lifecycle status */}
+          <div style={{ display:"flex", gap:10, marginTop:18, flexWrap:"wrap" }}>
+            {slug && (
               <ShareButton
                 type="tournament"
                 slug={slug}
                 title={`${tournament.name} — Live on TheScoreBoard`}
               />
-            </div>
-          )}
+            )}
+            {onRegister && tournament.registration_open && (
+              <button onClick={onRegister} style={{ background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
+                Register Now →
+              </button>
+            )}
+          </div>
 
-          {/* Register CTA — availability is date-driven (registration_open), not the lifecycle status */}
-          {onRegister && tournament.registration_open && (
-            <button onClick={onRegister} style={{ marginTop:16, background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
-              Register Now →
-            </button>
+          {/* Entry fee / register-by / contact — shown only when the organiser has set them */}
+          {hasStatsBar && (
+            <div style={{
+              display:"flex", gap: isMobile ? 18 : 32, flexWrap:"wrap",
+              marginTop:22, paddingTop:16,
+              borderTop:`1px solid ${tournament.poster_url ? "rgba(255,255,255,.15)" : "var(--border)"}`,
+            }}>
+              {tournament.payment_amount != null && (
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
+                    Entry
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
+                    Rs. {tournament.payment_amount}
+                  </div>
+                </div>
+              )}
+              {regDeadline && (
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
+                    Register By
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
+                    {regDeadline}
+                  </div>
+                </div>
+              )}
+              {firstContact && (
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
+                    Contact
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color:"var(--primary)" }}>
+                    {firstContact.name}{firstContact.phone ? ` · ${firstContact.phone}` : ""}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Sponsor credit strip — presented-by + other tiers, visible on every tab */}
@@ -2256,7 +2299,7 @@ function HeroSponsorStrip({ sponsors, dark }) {
   );
 }
 
-function InfoSection({ info, paymentAmount }) {
+function InfoSection({ info }) {
   const w = useW();
   const isMobile = w < 640;
 
@@ -2267,7 +2310,7 @@ function InfoSection({ info, paymentAmount }) {
       <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── Prize Pool / Registration / Overview / Rules from tournament_info JSON ── */}
-        <TournamentInfoDisplay info={info} paymentAmount={paymentAmount} twoCol={false} />
+        <TournamentInfoDisplay info={info} twoCol={false} />
 
       </div>
     </div>
@@ -3017,6 +3060,13 @@ export default function TournamentPublic() {
   );
   const fetchingRef = useRef(false);
 
+  usePageMeta(
+    data?.tournament?.name ? `${data.tournament.name} — Live Scores & Fixtures` : null,
+    data?.tournament?.name
+      ? `Live scores, fixtures, brackets and results for ${data.tournament.name} on TheScoreBoard.`
+      : null
+  );
+
   const toggleDark = () => {
     const next = !darkMode;
     setDarkMode(next);
@@ -3225,7 +3275,7 @@ export default function TournamentPublic() {
         {effectiveActive === "teams"       && hasTeams  && <TeamsSection events={events} isIndividual={isIndividualSport} />}
         {effectiveActive === "leaderboard" && hasBoard  && <LeaderboardSection events={events} />}
         {effectiveActive === "bracket"     && hasBracket && <BracketSection events={events} />}
-        {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} paymentAmount={t.payment_amount} />}
+        {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} />}
       </div>
 
       {/* ── Footer ── */}

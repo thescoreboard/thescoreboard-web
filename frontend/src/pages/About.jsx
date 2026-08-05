@@ -4,6 +4,7 @@
  */
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import usePageMeta from "../hooks/usePageMeta";
 
 const INSTAGRAM_URL  = "https://www.instagram.com/thescoreboard.in/";
 const CONTACT_EMAIL  = "teams@thescoreboard.in";
@@ -36,6 +37,7 @@ const sectionLabel = {
 const bodyText = { fontSize: 15, lineHeight: 1.85, color: "var(--ink)", marginBottom: 18 };
 
 export default function About() {
+  usePageMeta("About Us", "The story behind TheScoreBoard — a live tournament platform built for grassroots sports communities.");
   const navigate = useNavigate();
   const w = useW();
   const isDesktop = w >= 860;

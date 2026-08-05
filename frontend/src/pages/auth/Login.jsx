@@ -5,8 +5,10 @@ import {
   getMe, setStoredUser, setMode,
 } from "../../api/client";
 import GoogleSignInButton from "../../components/auth/GoogleButton";
+import usePageMeta from "../../hooks/usePageMeta";
 
 export default function Login() {
+  usePageMeta("Sign In");
   const navigate = useNavigate();
   const [form,    setForm]    = useState({ email: "", password: "" });
   const [error,   setError]   = useState("");

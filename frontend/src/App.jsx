@@ -1,30 +1,47 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { isLoggedIn, saveLoginRedirect } from "./api/client";
 
+// Landing stays eagerly loaded — it's the entry page and should paint
+// without waiting on a second chunk. Everything else is code-split so
+// visitors don't download the organiser/player/admin bundles up front.
+import Landing from "./pages/Landing";
+
 // Public
-import Landing             from "./pages/Landing";
-import SportPage           from "./pages/SportPage";
-import Tournaments         from "./pages/Tournaments";
-import TournamentPublic    from "./pages/TournamentPublic";
-import TournamentRegister  from "./pages/TournamentRegister";
-import Login               from "./pages/auth/Login";
-import Register            from "./pages/auth/Register";
-import PrivacyPolicy       from "./pages/PrivacyPolicy";
-import Terms               from "./pages/Terms";
-import About               from "./pages/About";
-import JoinTournament      from "./pages/JoinTournament";
+const SportPage          = lazy(() => import("./pages/SportPage"));
+const Tournaments        = lazy(() => import("./pages/Tournaments"));
+const TournamentPublic   = lazy(() => import("./pages/TournamentPublic"));
+const TournamentRegister = lazy(() => import("./pages/TournamentRegister"));
+const Login              = lazy(() => import("./pages/auth/Login"));
+const Register           = lazy(() => import("./pages/auth/Register"));
+const PrivacyPolicy      = lazy(() => import("./pages/PrivacyPolicy"));
+const Terms              = lazy(() => import("./pages/Terms"));
+const About              = lazy(() => import("./pages/About"));
+const JoinTournament     = lazy(() => import("./pages/JoinTournament"));
 
 // Player
-import PlayerDashboard from "./pages/player/PlayerDashboard";
+const PlayerDashboard = lazy(() => import("./pages/player/PlayerDashboard"));
 
 // Admin
-import AdminPanel from "./pages/admin/AdminPanel";
+const AdminPanel = lazy(() => import("./pages/admin/AdminPanel"));
 
 // Organiser
-import OrgDashboard       from "./pages/organiser/Dashboard";
-import CreateTournament   from "./pages/organiser/CreateTournament";
-import TournamentOverview from "./pages/organiser/workspace/TournamentOverview";
-import EventWorkspace     from "./pages/organiser/workspace/EventWorkspace";
+const OrgDashboard       = lazy(() => import("./pages/organiser/Dashboard"));
+const CreateTournament   = lazy(() => import("./pages/organiser/CreateTournament"));
+const TournamentOverview = lazy(() => import("./pages/organiser/workspace/TournamentOverview"));
+const EventWorkspace     = lazy(() => import("./pages/organiser/workspace/EventWorkspace"));
+
+// Shown while a route chunk downloads — matches the app's skeleton style.
+function RouteFallback() {
+  return (
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center",
+      justifyContent: "center", background: "var(--bg)",
+    }}>
+      <div className="skeleton" style={{ width: 120, height: 12, borderRadius: 6 }} />
+    </div>
+  );
+}
 
 function RequireAuth({ children, orgTheme = true, requireAdmin = false }) {
   const location = useLocation();
@@ -46,6 +63,7 @@ function RequireAuth({ children, orgTheme = true, requireAdmin = false }) {
 export default function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* Public */}
         <Route path="/"                              element={<Landing />} />
@@ -95,6 +113,7 @@ export default function App() {
         <Route path="/dashboard/*" element={<Navigate to="/organiser" replace />} />
         <Route path="*"            element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

@@ -70,6 +70,17 @@ def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
 
     try:
         import httpx
+        # Verify the token was issued to OUR OAuth client before trusting it.
+        # Without the audience check, an access token a user granted to ANY
+        # third-party app would sign that app's operator in here as the user.
+        ti = httpx.get(
+            "https://www.googleapis.com/oauth2/v3/tokeninfo",
+            params={"access_token": req.access_token},
+            timeout=5.0,
+        )
+        if ti.status_code != 200 or ti.json().get("aud") != settings.GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+
         resp = httpx.get(
             "https://www.googleapis.com/oauth2/v3/userinfo",
             headers={"Authorization": f"Bearer {req.access_token}"},
@@ -83,6 +94,11 @@ def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error("Google userinfo request failed: %s", e)
         raise HTTPException(status_code=401, detail="Could not verify Google token")
+
+    # Refuse unverified emails — we link accounts by email below, so an
+    # unverified address could hijack an existing local account.
+    if info.get("email_verified") not in (True, "true"):
+        raise HTTPException(status_code=401, detail="Google account email is not verified")
 
     google_id  = info["sub"]
     email      = info["email"]

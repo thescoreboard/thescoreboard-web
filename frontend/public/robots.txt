@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /organiser
+Disallow: /player
+Disallow: /admin
+Disallow: /login
+Disallow: /register
+Disallow: /join/
+
+Sitemap: https://thescoreboard.in/sitemap.xml

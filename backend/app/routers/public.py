@@ -836,7 +836,11 @@ def search(q: str, db: Session = Depends(get_db)):
         .all()
     )
 
-    return {"results": [_tournament_summary(t, db) for t in tournaments]}
+    # Single bulk stats query across ALL results (was N×3 queries — one
+    # _bulk_event_stats call per tournament via _tournament_summary).
+    all_event_ids = [e.event_id for t in tournaments for e in t.events if e.is_active]
+    stats = _bulk_event_stats(all_event_ids, db)
+    return {"results": [_build_tournament_card(t, stats) for t in tournaments]}
 
 
 # ── Public registration ───────────────────────────────────────

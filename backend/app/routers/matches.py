@@ -425,7 +425,13 @@ def _push_ws_update(event_id: int) -> None:
     from app.models.event import Event as _Event
     from app.ws.manager import manager
     from app.routers.public import _build_tournament_page_data, _set_t_page_cache
+    from app.routers.tournaments import invalidate_standings_cache
     from sqlalchemy.orm import joinedload as _jl
+
+    # Scores changed → cached standings for this event are stale. Do this
+    # before any early return (debounce / no watchers) so polling clients
+    # get fresh standings even when nobody is on the WebSocket.
+    invalidate_standings_cache(event_id)
 
     db = SessionLocal()
     try:
@@ -579,6 +585,11 @@ def update_match_status(
 ):
     match = _load_match(match_id, db)
     _check_event_access(match.event, user, db)
+    if data.status not in ("scheduled", "live", "done"):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be one of: scheduled, live, done",
+        )
     if data.status == "live" and len(match.participants) < 2:
         raise HTTPException(
             status_code=400,

@@ -87,13 +87,29 @@ def test_sponsor_logo_upload_free_plan_allowed(mock_upload, db):
 
 
 @patch("app.routers.media.storage.upload_bytes", return_value="https://cdn.example.com/x.jpg")
-def test_tournament_banner_upload_free_plan_blocked(mock_upload, db):
+def test_tournament_logo_upload_free_plan_allowed(mock_upload, db):
+    # Tournament logos (bucket "logos", tournaments/ path) became free-plan
+    # in the payment-collection release — only posters/banners stay Pro-only.
     t, client = _setup(db, plan="free")
     try:
         r = client.post(
             "/api/media/upload",
-            data={"bucket": "logos", "path": f"tournaments/{t.tournament_id}/banner.jpg"},
-            files={"file": ("banner.jpg", io.BytesIO(b"fake"), "image/jpeg")},
+            data={"bucket": "logos", "path": f"tournaments/{t.tournament_id}/logo.jpg"},
+            files={"file": ("logo.jpg", io.BytesIO(b"fake"), "image/jpeg")},
+        )
+        assert r.status_code == 200, r.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+@patch("app.routers.media.storage.upload_bytes", return_value="https://cdn.example.com/x.jpg")
+def test_tournament_poster_upload_free_plan_blocked(mock_upload, db):
+    t, client = _setup(db, plan="free")
+    try:
+        r = client.post(
+            "/api/media/upload",
+            data={"bucket": "tournament-posters", "path": f"tournaments/{t.tournament_id}/poster.jpg"},
+            files={"file": ("poster.jpg", io.BytesIO(b"fake"), "image/jpeg")},
         )
         assert r.status_code == 403
         assert r.json()["detail"] == "pro_required"
@@ -102,13 +118,13 @@ def test_tournament_banner_upload_free_plan_blocked(mock_upload, db):
 
 
 @patch("app.routers.media.storage.upload_bytes", return_value="https://cdn.example.com/x.jpg")
-def test_tournament_banner_upload_pro_plan_allowed(mock_upload, db):
+def test_tournament_poster_upload_pro_plan_allowed(mock_upload, db):
     t, client = _setup(db, plan="pro")
     try:
         r = client.post(
             "/api/media/upload",
-            data={"bucket": "logos", "path": f"tournaments/{t.tournament_id}/banner.jpg"},
-            files={"file": ("banner.jpg", io.BytesIO(b"fake"), "image/jpeg")},
+            data={"bucket": "tournament-posters", "path": f"tournaments/{t.tournament_id}/poster.jpg"},
+            files={"file": ("poster.jpg", io.BytesIO(b"fake"), "image/jpeg")},
         )
         assert r.status_code == 200, r.text
     finally:
