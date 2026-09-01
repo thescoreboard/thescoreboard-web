@@ -1147,6 +1147,16 @@
    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
    
    /* ── OrgHeader Desktop Styles ─────────────────────────────── */
+   /* Public tournament header reuses .site-header but isn't wrapped in
+      .organizer-flow, so without this it'd keep the raw gradient/glow that
+      OrgHeader gets flattened out of — flatten it the same way here. */
+   .site-header.public-tournament-header {
+     background: var(--bg);
+   }
+   .site-header.public-tournament-header::before {
+     display: none;
+   }
+
    .site-header.org-header .org-header-right {
      display: flex;
      align-items: center;

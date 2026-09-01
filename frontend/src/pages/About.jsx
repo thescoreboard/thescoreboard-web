@@ -56,8 +56,7 @@ export default function About() {
             </span>
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: "clamp(12px, 3vw, 20px)", flexShrink: 0 }}>
-            <Link to="/" style={navLink}>Home</Link>
-            <Link to="/tournaments" style={navLink}>Tournaments →</Link>
+            <Link to="/tournaments" className="landing-cta-btn">Tournaments →</Link>
           </div>
         </div>
       </div>
@@ -188,11 +187,6 @@ export default function About() {
     </div>
   );
 }
-
-const navLink = {
-  fontSize: "clamp(11px, 3.2vw, 13px)", color: "var(--muted)",
-  textDecoration: "none", whiteSpace: "nowrap",
-};
 
 const contactRow = {
   display: "inline-flex", alignItems: "center", gap: 10,

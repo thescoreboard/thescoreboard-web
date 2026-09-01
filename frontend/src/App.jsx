@@ -6,6 +6,7 @@ import { isLoggedIn, saveLoginRedirect } from "./api/client";
 // without waiting on a second chunk. Everything else is code-split so
 // visitors don't download the organiser/player/admin bundles up front.
 import Landing from "./pages/Landing";
+import ScrollToTop from "./components/shared/ScrollToTop";
 
 // Public
 const SportPage          = lazy(() => import("./pages/SportPage"));
@@ -63,6 +64,7 @@ function RequireAuth({ children, orgTheme = true, requireAdmin = false }) {
 export default function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <ScrollToTop />
       <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* Public */}
