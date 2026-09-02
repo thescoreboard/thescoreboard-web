@@ -25,15 +25,20 @@ try:
     alembic_command.upgrade(alembic_cfg, "head")
     logger.info("Alembic migrations applied.")
 except Exception as _mig_err:
-    logger.warning(f"Alembic migration skipped: {_mig_err}")
-    # Fall back to create_all for local dev without a DB URL.
-    # Guarded too: if the DB itself is unreachable (e.g. paused Supabase
-    # project), boot anyway — /api/health stays up and requests fail with
-    # clear DB errors instead of the whole process dying at import time.
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception as _ddl_err:
-        logger.error(f"DB unreachable at startup — continuing degraded: {_ddl_err}")
+    if not settings.DATABASE_URL:
+        # No DB configured (local dev) — fall back to create_all.
+        logger.warning(f"Alembic migration skipped: {_mig_err}")
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception as _ddl_err:
+            logger.error(f"DB unreachable at startup — continuing degraded: {_ddl_err}")
+    else:
+        # A real DB is configured: create_all() is a no-op for tables that
+        # already exist, so silently swallowing this would leave the app
+        # running against a stale schema (e.g. missing columns added by
+        # pending migrations). Fail the deploy loudly instead.
+        logger.exception("Alembic migration failed against a configured DATABASE_URL")
+        raise
 
 app = FastAPI(title=f"{settings.APP_NAME} API", version=settings.VERSION)
 
