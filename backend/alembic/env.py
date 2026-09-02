@@ -14,7 +14,7 @@ from alembic import context
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.config import settings
-from app.database import Base
+from app.database import Base, normalize_db_url
 
 # Import all models so Alembic sees them
 from app.models import *  # noqa: F401, F403
@@ -29,7 +29,7 @@ target_metadata = Base.metadata
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode — generates SQL without a live connection."""
     context.configure(
-        url=settings.DATABASE_URL,
+        url=normalize_db_url(settings.DATABASE_URL),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -40,7 +40,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode — connects to the database."""
-    connectable = create_engine(settings.DATABASE_URL)
+    connectable = create_engine(normalize_db_url(settings.DATABASE_URL))
 
     with connectable.connect() as connection:
         context.configure(

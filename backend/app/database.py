@@ -5,12 +5,25 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings
 
+
+def normalize_db_url(db_url: str) -> str:
+    """Rewrite postgresql:// and postgres:// URLs to use the psycopg3 driver.
+
+    This project only installs psycopg[binary] v3, not psycopg2, but
+    SQLAlchemy's default dialect for a bare postgresql:// scheme is psycopg2.
+    Anything that builds an engine from DATABASE_URL (this module, alembic)
+    must apply this rewrite or create_engine() fails with
+    ModuleNotFoundError: No module named 'psycopg2'.
+    """
+    if db_url.startswith("postgresql://"):
+        return db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    elif db_url.startswith("postgres://"):
+        return db_url.replace("postgres://", "postgresql+psycopg://", 1)
+    return db_url
+
+
 # Ensure we use psycopg3 dialect
-db_url = settings.DATABASE_URL
-if db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
-elif db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+db_url = normalize_db_url(settings.DATABASE_URL)
 
 if db_url.startswith("postgresql+psycopg://"):
     engine = create_engine(
