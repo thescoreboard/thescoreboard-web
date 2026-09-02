@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { getSportPageData } from "../api/client";
 import Header from "../components/shared/Header";
 import TournamentCard, { SPORT_LABELS, SPORT_ICONS } from "../components/shared/TournamentCard";
+import usePageMeta from "../hooks/usePageMeta";
 
 const SPORT_ABBREV = { table_tennis: "🏓", badminton: "🏸", cricket: "🏏", football: "⚽" };
 
@@ -30,6 +31,11 @@ export default function SportPage() {
   const location = useLocation();
   const sportUrl = location.pathname.replace("/", "");
   const navigate = useNavigate();
+  const sportLabel = SPORT_LABELS[sportUrl.replace(/-/g, "_")] || sportUrl;
+  usePageMeta(
+    `${sportLabel} Tournaments`,
+    `Find local ${sportLabel.toLowerCase()} tournaments near you. Register to compete and follow live scores on TheScoreBoard.`
+  );
   const [data,        setData]        = useState(null);
   const [filterCity,  setFilterCity]  = useState("");
   const [filterStatus,setFilterStatus]= useState("");

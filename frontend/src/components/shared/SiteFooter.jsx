@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { isLoggedIn } from "../../api/client";
 import { SPORT_LABELS } from "./TournamentCard";
 
@@ -12,11 +12,9 @@ const FOOTER_SPORTS = [
 // Shared site footer — identical on the landing page and public tournament pages.
 // onHowItWorks lets the landing page smooth-scroll to its section; everywhere
 // else it falls back to navigating home with the #how-it-works hash.
+// All links are real anchors (react-router <Link>) so crawlers can follow them.
 export default function SiteFooter({ onHowItWorks }) {
-  const navigate = useNavigate();
   const loggedIn = isLoggedIn();
-
-  const howItWorks = onHowItWorks || (() => navigate("/#how-it-works"));
 
   return (
     <footer style={{
@@ -51,7 +49,7 @@ export default function SiteFooter({ onHowItWorks }) {
             onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
             onMouseLeave={e => e.currentTarget.style.opacity = "1"}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
               <circle cx="12" cy="12" r="4"/>
               <circle cx="17.5" cy="6.5" r="0.5" fill="currentColor"/>
@@ -60,8 +58,8 @@ export default function SiteFooter({ onHowItWorks }) {
           </a>
           {/* About Us */}
           <div style={{ marginTop: 12 }}>
-            <a
-              onClick={() => navigate("/about")}
+            <Link
+              to="/about"
               style={{
                 cursor: "pointer", fontSize: 13, fontWeight: 700,
                 color: "var(--ink)", textDecoration: "none",
@@ -70,36 +68,51 @@ export default function SiteFooter({ onHowItWorks }) {
               onMouseLeave={e => e.currentTarget.style.color = "var(--ink)"}
             >
               About Us →
-            </a>
+            </Link>
           </div>
         </div>
         {[
           {
             title: "For Players",
             links: [
-              { label: "Find Tournaments",   action: () => navigate("/tournaments") },
-              { label: "Register to Play",   action: () => navigate("/tournaments?status=upcoming") },
-              { label: "Live Scores",        action: () => navigate("/tournaments?status=live") },
-              { label: "My Dashboard",       action: () => navigate(loggedIn ? "/player" : "/login") },
+              { label: "Find Tournaments",   to: "/tournaments" },
+              { label: "Register to Play",   to: "/tournaments?status=upcoming" },
+              { label: "Live Scores",        to: "/tournaments?status=live" },
+              { label: "My Dashboard",       to: loggedIn ? "/player" : "/login" },
             ],
           },
           {
             title: "For Organizers",
             links: [
-              { label: "Create Tournament",  action: () => navigate(loggedIn ? "/organiser" : "/login") },
-              { label: "Dashboard",          action: () => navigate(loggedIn ? "/organiser" : "/login") },
-              { label: "How It Works",       action: howItWorks },
+              { label: "Create Tournament",  to: loggedIn ? "/organiser" : "/login" },
+              { label: "Dashboard",          to: loggedIn ? "/organiser" : "/login" },
+              {
+                label: "How It Works",
+                to: "/#how-it-works",
+                onClick: onHowItWorks
+                  ? (e) => { e.preventDefault(); onHowItWorks(); }
+                  : undefined,
+              },
             ],
           },
           {
             title: "Sports",
-            links: FOOTER_SPORTS.map(s => ({ label: SPORT_LABELS[s.key], action: () => navigate(`/${s.url}`) })),
+            links: FOOTER_SPORTS.map(s => ({ label: SPORT_LABELS[s.key], to: `/${s.url}` })),
+          },
+          {
+            title: "Legal",
+            links: [
+              { label: "Privacy Policy", to: "/privacy" },
+              { label: "Terms of Service", to: "/terms" },
+            ],
           },
         ].map(col => (
           <div key={col.title} className="footer-col">
             <h4>{col.title}</h4>
             {col.links.map(l => (
-              <a key={l.label} onClick={l.action} style={{ cursor: "pointer" }}>{l.label}</a>
+              <Link key={l.label} to={l.to} onClick={l.onClick} style={{ cursor: "pointer", textDecoration: "none" }}>
+                {l.label}
+              </Link>
             ))}
           </div>
         ))}

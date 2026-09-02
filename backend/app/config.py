@@ -65,10 +65,35 @@ class Settings:
 
 settings = Settings()
 
-# Refuse to start in production with the placeholder key — anyone who knows
-# "change-me-in-production" can forge valid JWTs for any user.
-if settings.ENV == "prod" and settings.SECRET_KEY == "change-me-in-production":
+# ── Boot-time secret guard ────────────────────────────────────
+# Anyone who knows the signing key can forge valid JWTs for ANY user, so we
+# refuse to boot with a known placeholder key whenever the process is actually
+# serving public traffic.
+#
+# The tricky part: local dev legitimately runs with a placeholder key against a
+# REMOTE (Supabase) dev database, so "remote DB" is NOT a safe prod signal.
+# The reliable signal is the public-facing URLs: in production they point at a
+# real domain, while every local-dev URL is localhost. This also catches the
+# "forgot to set ENV=prod on the prod host" misconfiguration.
+_PLACEHOLDER_SECRETS = {
+    "",
+    "change-me-in-production",
+    "change-me-to-a-random-64-char-string",
+}
+
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0")
+
+
+def _serves_public_traffic() -> bool:
+    combined = f"{settings.FRONTEND_URL} {settings.SITE_URL} {settings.APP_URL}"
+    return not any(h in combined for h in _LOCAL_HOSTS)
+
+
+if settings.SECRET_KEY in _PLACEHOLDER_SECRETS and (
+    settings.ENV == "prod" or _serves_public_traffic()
+):
     raise RuntimeError(
-        "SECRET_KEY must be set to a cryptographically secure random value in "
-        "production. Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        "SECRET_KEY is a placeholder but this instance is serving public traffic. "
+        "Set SECRET_KEY to a cryptographically secure random value. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
     )

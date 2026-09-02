@@ -147,6 +147,17 @@ def delete_team(
     # SEC-4: verify the caller may manage this org's teams
     if team.org_id:
         require_org_access(team.org_id, user, db, allow_tournament_members=True)
+    # DI-3: refuse to hard-delete a team with match history (match_participants
+    # FK is ON DELETE CASCADE — deleting would corrupt completed matches).
+    from app.models.match import MatchParticipant
+    in_matches = db.query(MatchParticipant).filter(
+        MatchParticipant.team_id == team_id).first()
+    if in_matches:
+        raise HTTPException(
+            status_code=409,
+            detail="This team has match history and cannot be deleted. "
+                   "Remove it from its events instead.",
+        )
     db.delete(team)
     db.commit()
     return {"ok": True}

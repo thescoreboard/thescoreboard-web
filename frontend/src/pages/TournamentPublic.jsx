@@ -11,6 +11,7 @@ import PageLoader from "../components/shared/PageLoader";
 import SiteFooter from "../components/shared/SiteFooter";
 import { ShareButton } from "../components/shared/ShareButton";
 import { useShare } from "../hooks/useShare";
+import usePageMeta from "../hooks/usePageMeta";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -460,23 +461,30 @@ function PenDot({ result }) {
   );
 }
 
-// ── Round chip ────────────────────────────────────────────────
+// Shared stage-name lookup — used by the match detail modal's header
+// (a full-screen view, where the stage/round label is useful context,
+// unlike the card grid where it repeated on every card).
 const STAGE_CHIP_LABELS = {
   group: "Group Stage", quarter: "Quarterfinal",
   semi: "Semifinal", final: "Final", third_place: "3rd Place",
 };
-function RoundChip({ round, stage, round_name, table }) {
-  let label = round_name;
-  if (!label && stage) label = stage === "group" && round != null ? `Group Stage · Round ${round}` : (STAGE_CHIP_LABELS[stage] || null);
-  if (!label && round != null) label = `Round ${round}`;
-  if (!label) return null;
+
+// ── Table/court badge ───────────────────────────────────────────
+// The round/stage label used to live here too (e.g. "Group Stage · Round 1")
+// but every card in a group repeated the same "Group Stage" text — the
+// collapsible group header above the grid already says which group and
+// round-robin round these matches belong to, so it's dropped entirely
+// rather than shown on every single card.
+function TableBadge({ table }) {
+  if (!table) return null;
   return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-start", flexShrink:0 }}>
-      <span style={{ fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:0.8, background:"var(--primary-dim)", color:"var(--primary)", padding:"2px 7px", borderRadius:3, whiteSpace:"nowrap" }}>
-        {label}
-      </span>
-      {table && <span style={{ fontSize:9, color:"var(--muted)", fontWeight:700, marginTop:2 }}>Table {table}</span>}
-    </div>
+    <span style={{
+      fontSize:9, fontWeight:700, color:"var(--muted)",
+      background:"var(--elevated)", border:"1px solid var(--border)",
+      padding:"3px 8px", borderRadius:5, whiteSpace:"nowrap",
+    }}>
+      Table {table}
+    </span>
   );
 }
 
@@ -546,9 +554,9 @@ function CricketCard({ m, sponsorFooter }) {
     <div className={`mc${isLive ? " live" : ""}`} style={{ flexDirection:"column", gap:0, padding:0, overflow:"hidden" }}>
       {isLive && <div className="glow-bg"/>}
       <div style={{ padding:"12px 14px" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, gap:6 }}>
-          <RoundChip round={m.round} stage={m.stage} round_name={m.round_name} />
-          <StatusPill isLive={isLive} isDone={isDone} />
+        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+          <TableBadge table={m.table_number} />
+          <span style={{ marginLeft:"auto" }}><StatusPill isLive={isLive} isDone={isDone} /></span>
         </div>
         {inningsData.length === 0 && (
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
@@ -626,10 +634,11 @@ function FootballCard({ m, sponsorFooter }) {
     <div className={`mc${isLive ? " live" : ""}`} style={{ flexDirection:"column", gap:0, padding:0, overflow:"hidden" }}>
       {isLive && <div className="glow-bg"/>}
       <div style={{ padding:"12px 14px", display:"flex", flexDirection:"column", gap:8 }}>
-        {/* Stage chip + score row */}
+        {m.table_number && (
+          <div style={{ display:"flex" }}><TableBadge table={m.table_number} /></div>
+        )}
+        {/* Score row */}
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <RoundChip round={m.round} stage={m.stage} round_name={m.round_name} table={m.table_number} />
-
           {/* Team 1 */}
           <span style={{ flex:1, fontSize:13, fontWeight: p1Win ? 800 : 700, color: p1Win ? "#2563eb" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textAlign:"right" }}>
             {m.player_1?.name || "TBD"}
@@ -699,14 +708,23 @@ function DefaultCard({ m, sportKey, sponsorFooter }) {
     </span>
   );
 
+  // Matches without a granular per-set breakdown (e.g. seeded/legacy data
+  // that only recorded the final tally) would otherwise show no score at
+  // all — fall back to the aggregate sets-won count on player_1/player_2.
+  const showAggregateFallback = isDone && completedSets.length === 0
+    && m.player_1?.score != null && m.player_2?.score != null;
+
   return (
     <div className={`mc${isLive ? " live" : ""}`} style={{ flexDirection:"column", gap:0, padding:0, overflow:"hidden" }}>
       {isLive && <div className="glow-bg"/>}
-      <div style={{ padding:"12px 14px", display:"flex", alignItems:"center", gap:8 }}>
-        <RoundChip round={m.round} stage={m.stage} round_name={m.round_name} table={m.table_number} />
+      <div style={{ padding:"12px 14px" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+          <TableBadge table={m.table_number} />
+          <span style={{ marginLeft:"auto" }}><StatusPill isLive={isLive} isDone={isDone} /></span>
+        </div>
 
         {/* Two-row player layout */}
-        <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
           {/* Player 1 */}
           <div style={{ display:"flex", alignItems:"center", gap:5 }}>
             <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
@@ -720,6 +738,7 @@ function DefaultCard({ m, sportKey, sponsorFooter }) {
                 <SetChip key={s.set_number} val={s.score_p1} isWinner={s.score_p1 > s.score_p2} />
               ))}
               {isLive && <SetChip val={liveS1} isLiveChip />}
+              {showAggregateFallback && <SetChip val={m.player_1.score} isWinner={p1Win} />}
             </div>
           </div>
           {/* Player 2 */}
@@ -735,6 +754,7 @@ function DefaultCard({ m, sportKey, sponsorFooter }) {
                 <SetChip key={s.set_number} val={s.score_p2} isWinner={s.score_p2 > s.score_p1} />
               ))}
               {isLive && <SetChip val={liveS2} isLiveChip />}
+              {showAggregateFallback && <SetChip val={m.player_2.score} isWinner={p2Win} />}
             </div>
           </div>
           {/* Deuce / Advantage state */}
@@ -745,10 +765,6 @@ function DefaultCard({ m, sportKey, sponsorFooter }) {
               </span>
             </div>
           )}
-        </div>
-
-        <div style={{ flexShrink:0, display:"flex", alignItems:"center" }}>
-          <StatusPill isLive={isLive} isDone={isDone} />
         </div>
       </div>
       {sponsorFooter}
@@ -788,25 +804,17 @@ function formatDeadline(iso) {
   return `${MONTHS_FULL[m - 1]} ${d}, ${y}`;
 }
 
-function TournamentInfoDisplay({ info, paymentAmount, twoCol = false }) {
-  if (!info && !paymentAmount) return null;
-  info = info || {};
+function TournamentInfoDisplay({ info, twoCol = false }) {
+  if (!info) return null;
 
-  // Entry fee display prefers the structured Payment Collection amount
-  // (also used to gate registration) over the legacy free-text field —
-  // avoids asking organisers to set the fee in two different places.
-  const entryFeeDisplay = paymentAmount ? `₹${paymentAmount}` : info.contact?.entry_fee?.trim();
-
+  // Entry fee / register-by-date / contact persons all live in the hero band
+  // now (single source of truth: Payment Collection's amount + the Info
+  // editor's contact block) — this card no longer repeats them.
   const hasOverview = !!info.overview?.trim();
   const hasPrizes   = info.prize_pool?.length > 0;
   const hasRules    = !!info.rules?.trim();
-  const hasContact  = !!(
-    entryFeeDisplay ||
-    info.contact?.reg_deadline?.trim() ||
-    info.contact?.persons?.length > 0
-  );
 
-  if (!hasOverview && !hasPrizes && !hasRules && !hasContact) return null;
+  if (!hasOverview && !hasPrizes && !hasRules) return null;
 
   const sectionHead = {
     fontSize: 10, fontWeight: 800, textTransform: "uppercase",
@@ -868,61 +876,6 @@ function TournamentInfoDisplay({ info, paymentAmount, twoCol = false }) {
                 </div>
               ));
             })()}
-          </div>
-        )}
-
-        {/* Registration & Contact (entry fee) — top priority */}
-        {hasContact && (
-          <div style={card}>
-            <div style={sectionHead}>📞 Registration & Contact</div>
-            {(entryFeeDisplay || info.contact.reg_deadline) && (
-              <div style={{ display: "flex", gap: 24, marginBottom: info.contact.persons?.length ? 14 : 0,
-                flexWrap: "wrap" }}>
-                {entryFeeDisplay && (
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 2 }}>
-                      Entry Fee
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--ink)",
-                      fontFamily: "var(--font-display)" }}>
-                      {entryFeeDisplay}
-                    </div>
-                  </div>
-                )}
-                {info.contact.reg_deadline && (
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 2 }}>
-                      Deadline
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--ink)",
-                      fontFamily: "var(--font-display)" }}>
-                      {formatDeadline(info.contact.reg_deadline) || info.contact.reg_deadline}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {info.contact.persons?.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 8 }}>
-                  Contact
-                </div>
-                {info.contact.persons.map((p, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between",
-                    alignItems: "center", padding: "7px 0",
-                    borderBottom: i < info.contact.persons.length - 1 ? "1px solid var(--border)" : "none" }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{p.name}</span>
-                    {p.phone && (
-                      <a href={`tel:${p.phone}`}
-                        style={{ fontSize: 13, color: "var(--primary, #FF6B35)", fontWeight: 700,
-                          textDecoration: "none" }}>
-                        {p.phone}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
@@ -1565,6 +1518,21 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
   const locationStr = [tournament.city, tournament.state].filter(Boolean).join(", ") || null;
   const teamCount   = events.reduce((n, ev) => n + (ev.participants || []).length, 0);
 
+  // Sport + format eyebrow
+  const formatLabel = events[0]?.format ? events[0].format.replace(/_/g, " ") : null;
+
+  // Organiser identity — initials avatar (no logo upload yet, no verification concept)
+  const orgInitials = tournament.org_name
+    ? tournament.org_name.trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase()
+    : null;
+
+  // Entry fee / register-by / contact — from Payment Collection + the Info editor's contact block.
+  // Both are optional and shown only when the organiser has actually set them.
+  const contactInfo  = tournament.tournament_info?.contact || {};
+  const regDeadline  = contactInfo.reg_deadline ? formatDeadline(contactInfo.reg_deadline) : null;
+  const contacts     = contactInfo.persons || [];
+  const hasStatsBar  = !!(tournament.payment_amount || regDeadline || contacts.length > 0);
+
   // Team abbreviation helper
   const teamAbbr = (name) => {
     if (!name || name === "TBD") return name || "?";
@@ -1595,6 +1563,17 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
         )}
 
         <div style={{ position:"relative", zIndex:2 }}>
+          {/* Sport + format eyebrow */}
+          {(sportLabel || formatLabel) && (
+            <div style={{
+              fontFamily:"var(--font-display)", fontSize:11, fontWeight:800,
+              letterSpacing:2, textTransform:"uppercase", color:"var(--primary)",
+              marginBottom:10,
+            }}>
+              {[sportLabel, formatLabel].filter(Boolean).join(" · ")}
+            </div>
+          )}
+
           {/* Tournament name */}
           <h1 style={{
             fontFamily:"var(--font-display)",
@@ -1630,22 +1609,81 @@ function HeroBand({ tournament, totalPlayers, doneMatches, totalMatches, sportKe
             )}
           </div>
 
-          {/* Share button — static in hero, always visible */}
-          {slug && (
-            <div style={{ marginTop:18 }}>
+          {/* Organiser identity — initials avatar + club name (no logo/verification yet) */}
+          {tournament.org_name && (
+            <div style={{ display:"flex", alignItems:"center", gap:9, marginTop:14 }}>
+              <div style={{
+                width:30, height:30, borderRadius:"50%", flexShrink:0,
+                background:"var(--primary)", color:"#fff",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontFamily:"var(--font-display)", fontSize:11, fontWeight:900,
+              }}>
+                {orgInitials}
+              </div>
+              <span style={{ fontSize:13, fontWeight:700, color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
+                {tournament.org_name}
+              </span>
+            </div>
+          )}
+
+          {/* Share + Register CTA — availability is date-driven (registration_open), not the lifecycle status */}
+          <div style={{ display:"flex", gap:10, marginTop:18, flexWrap:"wrap" }}>
+            {slug && (
               <ShareButton
                 type="tournament"
                 slug={slug}
                 title={`${tournament.name} — Live on TheScoreBoard`}
               />
-            </div>
-          )}
+            )}
+            {onRegister && tournament.registration_open && (
+              <button onClick={onRegister} style={{ background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
+                Register Now →
+              </button>
+            )}
+          </div>
 
-          {/* Register CTA — availability is date-driven (registration_open), not the lifecycle status */}
-          {onRegister && tournament.registration_open && (
-            <button onClick={onRegister} style={{ marginTop:16, background:"var(--primary)", color:"#fff", border:"none", borderRadius:8, padding:"12px 28px", fontFamily:"var(--font-display)", fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", cursor:"pointer" }}>
-              Register Now →
-            </button>
+          {/* Entry fee / register-by / contact — shown only when the organiser has set them */}
+          {hasStatsBar && (
+            <div style={{
+              display:"flex", gap: isMobile ? 18 : 32, flexWrap:"wrap",
+              marginTop:22, paddingTop:16,
+              borderTop:`1px solid ${tournament.poster_url ? "rgba(255,255,255,.15)" : "var(--border)"}`,
+            }}>
+              {tournament.payment_amount != null && (
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
+                    Entry
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
+                    Rs. {tournament.payment_amount}
+                  </div>
+                </div>
+              )}
+              {regDeadline && (
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
+                    Register By
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color: tournament.poster_url ? "#fff" : "var(--ink)" }}>
+                    {regDeadline}
+                  </div>
+                </div>
+              )}
+              {contacts.length > 0 && (
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, letterSpacing:1.5, textTransform:"uppercase", color: tournament.poster_url ? "rgba(255,255,255,.45)" : "var(--muted)", marginBottom:3 }}>
+                    {contacts.length > 1 ? "Contacts" : "Contact"}
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                    {contacts.map((p, i) => (
+                      <div key={i} style={{ fontSize:14, fontWeight:800, fontFamily:"var(--font-display)", color:"var(--primary)" }}>
+                        {p.name}{p.phone ? ` · ${p.phone}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Sponsor credit strip — presented-by + other tiers, visible on every tab */}
@@ -2111,7 +2149,7 @@ function LiveStrip({ liveMatches }) {
 // first, tab bar underneath it, not fused into the same sticky strip.
 function TopBar({ darkMode, onToggleDark }) {
   return (
-    <header className="site-header">
+    <header className="site-header public-tournament-header">
       <div className="header-row">
         <span className="header-brand">
           The<span className="accent">Score</span>Board
@@ -2256,7 +2294,7 @@ function HeroSponsorStrip({ sponsors, dark }) {
   );
 }
 
-function InfoSection({ info, paymentAmount }) {
+function InfoSection({ info }) {
   const w = useW();
   const isMobile = w < 640;
 
@@ -2267,7 +2305,7 @@ function InfoSection({ info, paymentAmount }) {
       <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
 
         {/* ── Prize Pool / Registration / Overview / Rules from tournament_info JSON ── */}
-        <TournamentInfoDisplay info={info} paymentAmount={paymentAmount} twoCol={false} />
+        <TournamentInfoDisplay info={info} twoCol={false} />
 
       </div>
     </div>
@@ -2288,7 +2326,52 @@ function BroadcastSectionHeader({ title, count }) {
   );
 }
 
-// ── Fixtures section (broadcast table layout) ─────────────────
+// ── Collapsible group header — click to expand/collapse a group's card grid.
+// Own useState per instance, so it must be a real component (not inlined in
+// a .map callback) to keep hook rules intact across multiple groups.
+function CollapsibleGroup({ title, count, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginBottom:20, border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+          padding:"12px 18px", background:"var(--primary-dim)", border:"none", cursor:"pointer",
+          fontFamily:"var(--font-display)", fontSize:11, fontWeight:800, letterSpacing:1.5,
+          textTransform:"uppercase", color:"var(--ink)",
+        }}
+      >
+        <span style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {title}
+          {count != null && (
+            <span style={{ fontSize:9, fontWeight:800, color:"var(--primary)", background:"var(--surface)", borderRadius:4, padding:"1px 7px" }}>{count}</span>
+          )}
+        </span>
+        <span style={{ fontSize:11, color:"var(--primary)", transform: open ? "rotate(0deg)" : "rotate(-90deg)", transition:"transform .15s" }}>▾</span>
+      </button>
+      {open && <div style={{ padding:16, background:"var(--bg)" }}>{children}</div>}
+    </div>
+  );
+}
+
+// ── Responsive card grid — reuses the sport-aware MatchCard (Cricket/
+// Football/Default) so each card shows the right score format for its
+// sport. Column count is CSS-driven (auto-fill), so it naturally collapses
+// to 1 column on mobile without a separate JS-branched layout.
+function MatchCardGrid({ matches, onSelect }) {
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))", gap:14 }}>
+      {matches.map(m => (
+        <div key={m.match_id} onClick={() => onSelect?.(m)} style={{ cursor: onSelect ? "pointer" : "default" }}>
+          <MatchCard match={m} sportKey={m.sport_key} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Fixtures section (card grid layout) ────────────────────────
 function FixturesSection({ events, onSelect }) {
   const w = useW();
   const isMobile = w < 640;
@@ -2321,14 +2404,6 @@ function FixturesSection({ events, onSelect }) {
     r16:"Round of 16", round_of_16:"Round of 16", quarter:"Quarterfinal",
     semi:"Semifinal", final:"Final", third_place:"3rd Place",
   };
-  const getRoundLabel = (m) => {
-    if (m.round_name) return m.round_name;
-    const stage = effectiveStage(m);
-    if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
-    if (m.round != null) return `Round ${m.round}`;
-    return "Match";
-  };
-
   // ── Match sort order ─────────────────────────────────────────
   // Priority: live → group → preliminary → r32 → r16 → quarter → semi → final → 3rd_place → done
   const STAGE_ORDER = {
@@ -2536,238 +2611,6 @@ function FixturesSection({ events, onSelect }) {
         const champMatches  = matches.filter(m => !m.group);
         const hasGroupSplit = groupNames.length > 0;
 
-        const renderRow = (m, i, list) => {
-          const isLive = m.status === "live";
-          const isDone = m.status === "done";
-          const p1win  = m.player_1?.is_winner;
-          const p2win  = m.player_2?.is_winner;
-          const winner = p1win ? m.player_1?.name : p2win ? m.player_2?.name : null;
-          const rowBg  = isLive ? "rgba(255,107,53,.04)" : i % 2 === 0 ? "var(--surface)" : "var(--bg)";
-          // Racket sport helpers (TT / Badminton per-set display)
-          const isRacketFix  = m.sport_key === "table_tennis" || m.sport_key === "badminton";
-          const fSets        = [...(m.sets || [])].sort((a, b) => a.set_number - b.set_number);
-          const fCompSets    = fSets.filter(s => s.is_complete);
-          const fCurSet      = fSets.find(s => !s.is_complete);
-          const fServer      = m.current_server;
-          const fDeuceAt     = m.sport_key === "badminton" ? 20 : 10;
-          const fCS1         = fCurSet?.score_p1 ?? 0;
-          const fCS2         = fCurSet?.score_p2 ?? 0;
-          const fInDeuce     = isRacketFix && isLive && fCS1 >= fDeuceAt && fCS2 >= fDeuceAt;
-          const fIsDeuce     = fInDeuce && fCS1 === fCS2;
-          const fAdvFor      = fInDeuce && Math.abs(fCS1 - fCS2) === 1 ? (fCS1 > fCS2 ? 1 : 2) : null;
-
-          /* ── Mobile: card layout ── */
-          if (isMobile) {
-            return (
-              <div key={m.match_id} onClick={() => onSelect?.(m)} style={{ padding:"14px 16px", borderBottom: i < list.length - 1 ? "1px solid var(--border)" : "none", background: isLive ? "rgba(255,107,53,.04)" : "var(--surface)", cursor: onSelect ? "pointer" : "default" }}>
-                {/* Round + status badge */}
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-                  <span style={{ fontFamily:"var(--font-display)", fontSize:7.5, fontWeight:800, color:"var(--primary)", letterSpacing:1.5, textTransform:"uppercase" }}>
-                    {getRoundLabel(m)}
-                  </span>
-                  {isLive ? (
-                    <span style={{ display:"inline-flex", alignItems:"center", gap:4, border:"1px solid rgba(255,107,53,.4)", color:"var(--primary)", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>
-                      <span className="live-dot" style={{ width:5, height:5, background:"var(--primary)", color:"var(--primary)" }}/>LIVE
-                    </span>
-                  ) : isDone ? (
-                    <span style={{ border:"1px solid rgba(22,163,74,.35)", color:"#16a34a", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>FT</span>
-                  ) : (
-                    <span style={{ border:"1px solid var(--border)", color:"var(--muted)", borderRadius:3, padding:"2px 7px", fontFamily:"var(--font-display)", fontSize:6.5, fontWeight:700 }}>UPCOMING</span>
-                  )}
-                </div>
-                {/* Score row — racket sports show per-set breakdown */}
-                {isRacketFix && (isDone || isLive) ? (
-                  <div>
-                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                      <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
-                        {isLive && fServer === 1 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
-                        <span style={{ fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_1?.name || "TBD"}</span>
-                      </div>
-                      <div style={{ display:"flex", gap:2, flexShrink:0 }}>
-                        {fCompSets.map(s => (
-                          <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
-                        ))}
-                        {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
-                      </div>
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
-                      <div style={{ flex:1, display:"flex", alignItems:"center", gap:4, minWidth:0 }}>
-                        {isLive && fServer === 2 && <span style={{ fontSize:8, color:"var(--primary)", lineHeight:1, flexShrink:0 }}>●</span>}
-                        <span style={{ fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.player_2?.name || "TBD"}</span>
-                      </div>
-                      <div style={{ display:"flex", gap:2, flexShrink:0 }}>
-                        {fCompSets.map(s => (
-                          <span key={s.set_number} style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
-                        ))}
-                        {isLive && fCurSet && <span style={{ fontSize:11, fontWeight:800, padding:"1px 5px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
-                      </div>
-                    </div>
-                    {isLive && (fIsDeuce || fAdvFor) && (
-                      <div style={{ fontSize:9, fontWeight:900, color:"var(--primary)", marginTop:3, textAlign:"right", letterSpacing:0.5 }}>
-                        {fIsDeuce ? "DEUCE" : `ADV ${fAdvFor === 1 ? (m.player_1?.name||"P1").split(" ")[0] : (m.player_2?.name||"P2").split(" ")[0]}`}
-                      </div>
-                    )}
-                    {winner && <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>{winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span></div>}
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p1win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", textAlign:"right" }}>
-                        {m.player_1?.name || "TBD"}
-                      </span>
-                      <div style={{ background:"var(--elevated)", borderRadius:6, padding:"4px 14px", flexShrink:0 }}>
-                        {isDone || isLive ? (
-                          <span style={{ fontFamily:"var(--font-display)", fontSize:18, fontWeight:900, color: isLive ? "var(--primary)" : "var(--ink)", letterSpacing:-1 }}>
-                            {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
-                          </span>
-                        ) : (
-                          <span style={{ fontFamily:"var(--font-display)", fontSize:14, fontWeight:900, color:"var(--muted)" }}>vs</span>
-                        )}
-                      </div>
-                      <span style={{ flex:1, fontSize:13, fontWeight:700, color: isDone && !p2win ? "var(--muted)" : "var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {m.player_2?.name || "TBD"}
-                      </span>
-                    </div>
-                    {winner && (
-                      <div style={{ fontSize:11, color:"var(--muted)", marginTop:6 }}>
-                        {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          }
-
-          /* ── Desktop: flex row ──
-             Round + Score are grouped tightly on the left with a fixed gap;
-             a single flexible spacer pushes Result to the far right. The old
-             3-column grid gave the Score column the whole 1fr of leftover
-             space and centered content inside it, which on a wide screen
-             produced two large, disconnected gaps instead of one — the row
-             read as three floating islands rather than a single match. */
-          return (
-            <div
-              key={m.match_id}
-              onClick={() => onSelect?.(m)}
-              style={{ display:"flex", alignItems:"center", gap:24, padding:"18px 24px", borderBottom: i < list.length - 1 ? "1px solid var(--border)" : "none", background:rowBg, cursor: onSelect ? "pointer" : "default", transition:"background .15s" }}
-              onMouseEnter={e => { if (onSelect) e.currentTarget.style.background = "var(--elevated)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}
-            >
-              {/* Round column */}
-              <div style={{ width:140, flexShrink:0 }}>
-                <span style={{ fontFamily:"var(--font-display)", fontSize:8, fontWeight:800, color:"var(--primary)", letterSpacing:1.5, display:"block", marginBottom:5, textTransform:"uppercase" }}>
-                  {getRoundLabel(m)}
-                </span>
-                {isLive ? (
-                  <span style={{ display:"inline-flex", alignItems:"center", gap:4, border:"1px solid rgba(255,107,53,.4)", color:"var(--primary)", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>
-                    <span className="live-dot" style={{ width:5, height:5, background:"var(--primary)", color:"var(--primary)" }}/>LIVE
-                  </span>
-                ) : isDone ? (
-                  <span style={{ border:"1px solid rgba(22,163,74,.35)", color:"#16a34a", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>FT</span>
-                ) : (
-                  <span style={{ border:"1px solid var(--border)", color:"var(--muted)", borderRadius:3, padding:"2px 8px", fontFamily:"var(--font-display)", fontSize:7, fontWeight:700 }}>UPCOMING</span>
-                )}
-                {m.table_number && <div style={{ fontSize:9, color:"var(--muted)", marginTop:3 }}>Table {m.table_number}</div>}
-              </div>
-
-              {/* Score column — racket sports: per-set breakdown. Fixed
-                  width, sitting right next to Round instead of floating in
-                  the middle of the row. */}
-              <div style={{ width:400, flexShrink:0 }}>
-                {isRacketFix && (isDone || isLive) ? (
-                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ flex:1, display:"flex", flexDirection:"column", gap:3, minWidth:0 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                        {isLive && fServer === 1 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
-                        <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>{m.player_1?.name || "TBD"}</span>
-                      </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                        {isLive && fServer === 2 && <span style={{ fontSize:7, color:"var(--primary)", flexShrink:0 }}>●</span>}
-                        <span style={{ fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>{m.player_2?.name || "TBD"}</span>
-                      </div>
-                    </div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:3, flexShrink:0 }}>
-                      <div style={{ display:"flex", gap:3 }}>
-                        {fCompSets.map(s => (
-                          <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p1 > s.score_p2 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p1 > s.score_p2 ? "#16a34a" : "var(--muted)" }}>{s.score_p1}</span>
-                        ))}
-                        {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS1}</span>}
-                      </div>
-                      <div style={{ display:"flex", gap:3 }}>
-                        {fCompSets.map(s => (
-                          <span key={s.set_number} style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background: s.score_p2 > s.score_p1 ? "rgba(22,163,74,.12)" : "var(--elevated)", color: s.score_p2 > s.score_p1 ? "#16a34a" : "var(--muted)" }}>{s.score_p2}</span>
-                        ))}
-                        {isLive && fCurSet && <span style={{ fontSize:12, fontWeight:800, padding:"2px 7px", borderRadius:5, background:"var(--primary-dim)", color:"var(--primary)", border:"1px solid rgba(255,107,53,.3)" }}>{fCS2}</span>}
-                      </div>
-                    </div>
-                    {isLive && (fIsDeuce || fAdvFor) && (
-                      <div style={{ flexShrink:0 }}>
-                        <span style={{ fontSize:9, fontWeight:900, color:"var(--primary)", letterSpacing:0.5 }}>
-                          {fIsDeuce ? "DEUCE" : `ADV`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ display:"flex", alignItems:"center" }}>
-                    <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, textAlign:"right", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p1win ? "var(--muted)" : "var(--ink)" }}>
-                      {m.player_1?.name || "TBD"}
-                    </span>
-                    <div style={{ padding:"0 24px", textAlign:"center", minWidth:100, flexShrink:0 }}>
-                      {isDone || isLive ? (
-                        <span style={{ fontFamily:"var(--font-display)", fontSize:26, fontWeight:900, color:"var(--ink)", letterSpacing:-1 }}>
-                          {m.player_1?.score ?? 0}–{m.player_2?.score ?? 0}
-                        </span>
-                      ) : (
-                        <span style={{ fontFamily:"var(--font-display)", fontSize:16, fontWeight:900, color:"var(--muted)" }}>vs</span>
-                      )}
-                    </div>
-                    <span style={{ flex:1, fontFamily:"var(--font-display)", fontSize:13, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color: isDone && !p2win ? "var(--muted)" : "var(--ink)" }}>
-                      {m.player_2?.name || "TBD"}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Spacer absorbs remaining width — the row's one gap */}
-              <div style={{ flex:1 }} />
-
-              {/* Result column */}
-              <div style={{ width:160, flexShrink:0 }}>
-                {winner ? (
-                  <span style={{ fontSize:12, color:"var(--muted)", fontWeight:500 }}>
-                    {winner} <span style={{ color:"var(--ink)", fontWeight:700 }}>won</span>
-                  </span>
-                ) : isLive ? (
-                  <span style={{ fontSize:11, color:"var(--primary)", fontWeight:700 }}>In progress</span>
-                ) : (
-                  <span style={{ color:"var(--muted)", fontSize:12 }}>—</span>
-                )}
-              </div>
-            </div>
-          );
-        };
-
-        const renderMatchList = (list) => (
-          <div style={{ border:"1px solid var(--border)", borderRadius:12, overflow:"hidden", boxShadow:"0 1px 4px rgba(0,0,0,.06)" }}>
-            {!isMobile && (
-              <div style={{ display:"flex", alignItems:"center", gap:24, padding:"10px 24px", background:"var(--elevated)", borderBottom:"1px solid var(--border)" }}>
-                <div style={{ width:140, flexShrink:0, fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5 }}>Round</div>
-                <div style={{ width:400, flexShrink:0, fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5 }}>Score</div>
-                <div style={{ flex:1 }} />
-                <div style={{ width:160, flexShrink:0, fontFamily:"var(--font-display)", fontSize:7, fontWeight:800, color:"var(--muted)", letterSpacing:1.5 }}>Result</div>
-              </div>
-            )}
-            {list.map((m, i) => renderRow(m, i, list))}
-          </div>
-        );
-
-        const groupHeaderStyle = {
-          fontFamily:"var(--font-display)", fontSize:10, fontWeight:800, letterSpacing:1.5,
-          color:"var(--primary)", textTransform:"uppercase", marginBottom:10,
-        };
-
         return (
           <div key={ev.event_id} style={{ marginBottom: multiEvent ? 48 : 0 }}>
             <BroadcastSectionHeader
@@ -2776,21 +2619,22 @@ function FixturesSection({ events, onSelect }) {
             />
             {hasGroupSplit ? (
               <>
-                {groupNames.map(name => (
-                  <div key={name} style={{ marginBottom:24 }}>
-                    <div style={groupHeaderStyle}>{name}</div>
-                    {renderMatchList(matches.filter(m => m.group === name))}
-                  </div>
-                ))}
+                {groupNames.map(name => {
+                  const groupMatches = matches.filter(m => m.group === name);
+                  return (
+                    <CollapsibleGroup key={name} title={name} count={groupMatches.length}>
+                      <MatchCardGrid matches={groupMatches} onSelect={onSelect} />
+                    </CollapsibleGroup>
+                  );
+                })}
                 {champMatches.length > 0 && (
-                  <div style={{ marginBottom:24 }}>
-                    <div style={groupHeaderStyle}>Championship</div>
-                    {renderMatchList(champMatches)}
-                  </div>
+                  <CollapsibleGroup title="Championship" count={champMatches.length}>
+                    <MatchCardGrid matches={champMatches} onSelect={onSelect} />
+                  </CollapsibleGroup>
                 )}
               </>
             ) : (
-              renderMatchList(matches)
+              <MatchCardGrid matches={matches} onSelect={onSelect} />
             )}
           </div>
         );
@@ -3017,6 +2861,13 @@ export default function TournamentPublic() {
   );
   const fetchingRef = useRef(false);
 
+  usePageMeta(
+    data?.tournament?.name ? `${data.tournament.name} — Live Scores & Fixtures` : null,
+    data?.tournament?.name
+      ? `Live scores, fixtures, brackets and results for ${data.tournament.name} on TheScoreBoard.`
+      : null
+  );
+
   const toggleDark = () => {
     const next = !darkMode;
     setDarkMode(next);
@@ -3225,7 +3076,7 @@ export default function TournamentPublic() {
         {effectiveActive === "teams"       && hasTeams  && <TeamsSection events={events} isIndividual={isIndividualSport} />}
         {effectiveActive === "leaderboard" && hasBoard  && <LeaderboardSection events={events} />}
         {effectiveActive === "bracket"     && hasBracket && <BracketSection events={events} />}
-        {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} paymentAmount={t.payment_amount} />}
+        {effectiveActive === "info"        && hasInfo   && <InfoSection info={t.tournament_info} />}
       </div>
 
       {/* ── Footer ── */}

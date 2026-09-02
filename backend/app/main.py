@@ -7,6 +7,7 @@ import traceback
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.config import settings
 from app.database import engine, Base
 from app.routers import auth, organizations, tournaments, tournament_members, events, players, matches, public, teams, media, share, ws as ws_router, dashboard, admin
@@ -25,8 +26,14 @@ try:
     logger.info("Alembic migrations applied.")
 except Exception as _mig_err:
     logger.warning(f"Alembic migration skipped: {_mig_err}")
-    # Fall back to create_all for local dev without a DB URL
-    Base.metadata.create_all(bind=engine)
+    # Fall back to create_all for local dev without a DB URL.
+    # Guarded too: if the DB itself is unreachable (e.g. paused Supabase
+    # project), boot anyway — /api/health stays up and requests fail with
+    # clear DB errors instead of the whole process dying at import time.
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as _ddl_err:
+        logger.error(f"DB unreachable at startup — continuing degraded: {_ddl_err}")
 
 app = FastAPI(title=f"{settings.APP_NAME} API", version=settings.VERSION)
 
@@ -52,7 +59,10 @@ async def global_exception_handler(request: Request, exc: Exception):
     if origin and (allowed_origins == ["*"] or origin in allowed_origins):
         headers["Access-Control-Allow-Origin"] = origin
         headers["Access-Control-Allow-Credentials"] = "true"
-    return JSONResponse(status_code=500, content={"detail": str(exc)}, headers=headers)
+    # Never leak internal exception text to clients in production — the full
+    # traceback is already logged above. Dev keeps the detail for debugging.
+    detail = str(exc) if not settings.is_prod else "Internal server error"
+    return JSONResponse(status_code=500, content={"detail": detail}, headers=headers)
 
 # ── CORS Configuration ────────────────────────────────────────
 # Support comma-separated origins: "https://dev.thescoreboard.in,http://localhost:5173"
@@ -64,6 +74,10 @@ else:
     allowed_origins = [origin.strip() for origin in settings.FRONTEND_URL.split(",") if origin.strip()]
 
 logger.info(f"CORS allowed origins: {allowed_origins}")
+
+# Compress JSON responses ≥1 KB — tournament payloads shrink ~5-10×,
+# which dominates transfer time for mobile clients on venue WiFi.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,

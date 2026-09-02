@@ -4,7 +4,7 @@ EventParticipant — enrollment of a player or team in an event + group assignme
 Standing — running points table for round-robin / group-stage events.
 """
 from sqlalchemy import (
-    Column, Integer, String, DateTime, ForeignKey, UniqueConstraint,
+    Column, Integer, String, DateTime, ForeignKey, UniqueConstraint, CheckConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -59,6 +59,13 @@ class EventParticipant(Base):
         # A player or team can only be enrolled once per event
         UniqueConstraint("event_id", "player_id", name="uq_event_player"),
         UniqueConstraint("event_id", "team_id", name="uq_event_team"),
+        # DI-1: exactly one of player_id / team_id must be set.
+        CheckConstraint(
+            "(player_id IS NULL) <> (team_id IS NULL)", name="ck_ep_one_side"),
+        # DI-2: payment_status is a closed enum.
+        CheckConstraint(
+            "payment_status IN ('not_required', 'pending', 'paid')",
+            name="ck_ep_payment_status"),
     )
 
     event = relationship("Event", back_populates="participants")

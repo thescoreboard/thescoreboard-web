@@ -1,0 +1,26 @@
+# TheScoreBoard
+
+> TheScoreBoard (thescoreboard.in) is a live tournament platform for grassroots sports communities in India. Players can find local tournaments by sport and city, register to compete, and follow live scores. Organisers can create tournaments, auto-generate brackets and fixtures, manage live scoring, and publish results instantly.
+
+Supported sports: Football, Cricket, Table Tennis, and Badminton.
+
+## Main Pages
+
+- [Home](https://thescoreboard.in/): Platform overview, featured tournaments, and how it works
+- [Find Tournaments](https://thescoreboard.in/tournaments): Browse and filter all tournaments by sport, city, and status
+- [Football](https://thescoreboard.in/football): Football tournaments and live scores
+- [Cricket](https://thescoreboard.in/cricket): Cricket tournaments and live scores
+- [Table Tennis](https://thescoreboard.in/table-tennis): Table tennis tournaments and live scores
+- [Badminton](https://thescoreboard.in/badminton): Badminton tournaments and live scores
+- [About Us](https://thescoreboard.in/about): About the platform and team
+
+## Legal
+
+- [Privacy Policy](https://thescoreboard.in/privacy): How user data is handled
+- [Terms of Service](https://thescoreboard.in/terms): Terms of use
+
+## Notes
+
+- Tournament pages live at /t/{slug} and show live brackets, fixtures, standings, and results.
+- Registration for a tournament happens at /t/{slug}/register.
+- Organiser and player dashboards require an account.

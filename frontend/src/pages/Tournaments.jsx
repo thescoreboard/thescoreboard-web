@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getAllTournaments, isLoggedIn } from "../api/client";
 import TournamentCard, { SPORT_LABELS } from "../components/shared/TournamentCard";
+import usePageMeta from "../hooks/usePageMeta";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ function SkeletonCard() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Tournaments() {
+  usePageMeta("Find Tournaments", "Browse local sports tournaments by sport, city and status. Register to play or follow live scores.");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 

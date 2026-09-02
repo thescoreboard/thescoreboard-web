@@ -18,7 +18,7 @@ from app.schemas.tournament import TournamentCreate, TournamentUpdate, Tournamen
 from app.utils.auth import get_current_user
 from app.utils.slug import generate_unique_slug
 from app.utils.tournament_access import (
-    require_tournament_access, require_org_access, require_event_access, ensure_role,
+    require_tournament_access, require_org_access, require_event_access,
     ROLE_ADMIN, ROLE_STAFF,
 )
 from app.sports.registry import get_sport_engine
@@ -648,8 +648,7 @@ def generate_fixtures(
             detail="Event format is not set. Please complete sport setup first.",
         )
 
-    t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    ensure_role(t, user, db)
+    require_tournament_access(event.tournament_id, user, db)
 
     engine = get_sport_engine(event.sport_key)
     is_team_event = event.participant_type in ("team", "doubles_pair")
@@ -831,6 +830,21 @@ def generate_fixtures(
 
 # ── Standings (round-robin / group-stage points table) ────────
 
+# Short-TTL cache: standings are recomputed from every completed match on
+# each call, and spectators poll this hard during live events. Same pattern
+# as public.py's tournament-page cache. Score-changing commits invalidate
+# eagerly via invalidate_standings_cache() (called from matches.py), so the
+# TTL only bounds staleness for changes that bypass that hook.
+import time as _time
+
+_standings_cache: dict = {}   # event_id → {"data": dict, "ts": float}
+_STANDINGS_TTL = 5.0          # seconds
+
+
+def invalidate_standings_cache(event_id: int) -> None:
+    _standings_cache.pop(event_id, None)
+
+
 @router.get("/events/{event_id}/standings")
 def get_standings(
     event_id: int,
@@ -838,9 +852,13 @@ def get_standings(
 ):
     """
     Compute live standings for round_robin or group_knockout events.
-    Calculated on-the-fly from completed matches — no stale cache issues.
+    Calculated from completed matches, cached for a few seconds per event.
     Returns a list of groups (or a single 'all' group for round_robin).
     """
+    cached = _standings_cache.get(event_id)
+    if cached and (_time.time() - cached["ts"]) < _STANDINGS_TTL:
+        return cached["data"]
+
     event = db.query(Event).filter(Event.event_id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -979,7 +997,9 @@ def get_standings(
         rows = sorted(standings.get(None, {}).values(), key=_sort_key)
         groups_out.append({"group_id": None, "name": "Standings", "rows": rows})
 
-    return {"event_id": event_id, "format": event.format, "groups": groups_out}
+    result = {"event_id": event_id, "format": event.format, "groups": groups_out}
+    _standings_cache[event_id] = {"data": result, "ts": _time.time()}
+    return result
 
 
 # ── Phase 1: create groups + round-robin fixtures ─────────────
@@ -1009,8 +1029,7 @@ def generate_groups(
     if num_groups < 2:
         raise HTTPException(status_code=400, detail="num_groups must be at least 2")
 
-    t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    ensure_role(t, user, db)
+    require_tournament_access(event.tournament_id, user, db)
 
     is_team_event = event.participant_type in ("team", "doubles_pair")
     engine = get_sport_engine(event.sport_key)
@@ -1163,8 +1182,7 @@ def generate_group_matches(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    ensure_role(t, user, db)
+    require_tournament_access(event.tournament_id, user, db)
 
     is_team_event = event.participant_type in ("team", "doubles_pair")
     engine        = get_sport_engine(event.sport_key)
@@ -1267,8 +1285,7 @@ def generate_knockout_from_groups(
         # values above 2 were previously accepted and silently produced nothing.
         raise HTTPException(status_code=400, detail="qualifiers_per_group must be 1 or 2")
 
-    t = db.query(Tournament).filter(Tournament.tournament_id == event.tournament_id).first()
-    ensure_role(t, user, db)
+    require_tournament_access(event.tournament_id, user, db)
 
     is_team_event = event.participant_type in ("team", "doubles_pair")
     engine = get_sport_engine(event.sport_key)

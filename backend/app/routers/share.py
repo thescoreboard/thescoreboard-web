@@ -82,6 +82,20 @@ def _og_redirect_html(
     url: str,
     deep_link: str = "",
 ) -> str:
+    # title/description carry organiser-entered text (tournament name, city,
+    # venue, participant names) — escape for the HTML context, and emit URLs
+    # into the inline script as JSON literals so no value can break out of
+    # its string and inject markup or JS.
+    import html as _html
+    import json as _json
+    title       = _html.escape(title, quote=True)
+    description = _html.escape(description, quote=True)
+    image_url   = _html.escape(image_url, quote=True)
+    url         = _html.escape(url, quote=True)
+    redirect_js = _json.dumps(redirect_url)
+    deep_js     = _json.dumps(deep_link)
+    redirect_url = _html.escape(redirect_url, quote=True)
+
     deep_link_js = ""
     if deep_link:
         deep_link_js = f"""
@@ -91,8 +105,8 @@ def _og_redirect_html(
     var isAndroid = /android/i.test(ua);
     var isIOS     = /iphone|ipad|ipod/i.test(ua);
     if (isAndroid || isIOS) {{
-      var appUrl   = "{deep_link}";
-      var webUrl   = "{redirect_url}";
+      var appUrl   = {deep_js};
+      var webUrl   = {redirect_js};
       // Intent URL for Android (works even when browser intercepts custom schemes)
       var intentUrl = appUrl.replace(/^thescoreboard:\/\//, "intent://")
                             + "#Intent;scheme=thescoreboard;package=in.thescoreboard.app;end";
@@ -104,10 +118,10 @@ def _og_redirect_html(
       window.location.href = isAndroid ? intentUrl : appUrl;
       return;
     }}
-    window.location.replace("{redirect_url}");
+    window.location.replace({redirect_js});
   }})();"""
     else:
-        deep_link_js = f'window.location.replace("{redirect_url}");'
+        deep_link_js = f"window.location.replace({redirect_js});"
 
     return f"""<!DOCTYPE html>
 <html lang="en" prefix="og: https://ogp.me/ns#">

@@ -24,6 +24,8 @@ class Match(Base):
     status = Column(String(50), default="scheduled", index=True)  # scheduled | live | done
     table_number = Column(Integer, nullable=True)
     court_number = Column(Integer, nullable=True)  # for badminton/tennis
+    # NOTE: `stage` deliberately has NO CHECK constraint — legacy rows carry
+    # values like 'third'/'bye' that a strict enum would reject.
 
     # Who is currently serving (position 1 or 2), null if not applicable
     current_server = Column(Integer, nullable=True)
@@ -43,6 +45,8 @@ class Match(Base):
     __table_args__ = (
         Index("ix_matches_event_status", "event_id", "status"),
         Index("ix_matches_event_round",  "event_id", "stage", "round"),
+        CheckConstraint(
+            "status IN ('scheduled', 'live', 'done')", name="ck_matches_status"),
     )
 
     # Relationships
@@ -82,6 +86,9 @@ class MatchParticipant(Base):
     __table_args__ = (
         UniqueConstraint("match_id", "position", name="uq_match_position"),
         CheckConstraint("position IN (1, 2)", name="ck_position_1_or_2"),
+        # DI-1: exactly one of player_id / team_id must be set.
+        CheckConstraint(
+            "(player_id IS NULL) <> (team_id IS NULL)", name="ck_mp_one_side"),
     )
 
     match = relationship("Match", back_populates="participants")

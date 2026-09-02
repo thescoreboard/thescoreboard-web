@@ -3,24 +3,70 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TheScoreBoard</title>
-    <meta name="description" content="Live tournament scores for Table Tennis, Badminton, Cricket, Football and more." />
+    <title>TheScoreBoard — Find Local Sports Tournaments & Live Scores</title>
+    <meta name="description" content="Find local football, cricket, table tennis & badminton tournaments. Register to play, follow live scores and track results in real time." />
 
-    <meta property="og:title" content="TheScoreBoard" />
-    <meta property="og:description" content="Live tournament scores for Table Tennis, Badminton, Cricket, Football and more." />
+    <link rel="canonical" href="https://thescoreboard.in/" />
+
+    <meta property="og:site_name" content="TheScoreBoard" />
+    <meta property="og:title" content="TheScoreBoard — Find Local Sports Tournaments & Live Scores" />
+    <meta property="og:description" content="Find local football, cricket, table tennis & badminton tournaments. Register to play, follow live scores and track results in real time." />
     <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta property="og:url" content="https://thescoreboard.in/" />
+    <meta property="og:locale" content="en_IN" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="TheScoreBoard — Find Local Sports Tournaments & Live Scores" />
+    <meta name="twitter:description" content="Find local football, cricket, table tennis & badminton tournaments. Register to play, follow live scores and track results in real time." />
 
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Load fonts async so they don't block first paint (display=swap shows fallback text immediately) -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+    </noscript>
     
     <script>
       const savedTheme = localStorage.getItem('theme') || 'light';
       document.documentElement.setAttribute('data-theme', savedTheme);
+      // Keep the canonical URL in sync with the SPA route (index.html is
+      // served for every path, so a fixed canonical would point them all home)
+      (function () {
+        var link = document.querySelector('link[rel="canonical"]');
+        if (link) link.setAttribute('href', 'https://thescoreboard.in' + location.pathname);
+      })();
+    </script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://thescoreboard.in/#organization",
+          "name": "TheScoreBoard",
+          "url": "https://thescoreboard.in/",
+          "logo": "https://thescoreboard.in/favicon.png",
+          "sameAs": ["https://www.instagram.com/thescoreboard.in/"]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://thescoreboard.in/#website",
+          "name": "TheScoreBoard",
+          "url": "https://thescoreboard.in/",
+          "description": "Find local football, cricket, table tennis & badminton tournaments. Register to play, follow live scores and track results in real time.",
+          "publisher": { "@id": "https://thescoreboard.in/#organization" }
+        }
+      ]
+    }
     </script>
   </head>
   <body>

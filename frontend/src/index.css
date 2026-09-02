@@ -3,7 +3,8 @@
    Fonts: Unbounded (display) + Space Grotesk (body)
    ══════════════════════════════════════════════════════════ */
 
-   @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+   /* Fonts are loaded asynchronously from index.html — a CSS @import here
+      would block first paint behind a fonts.googleapis.com round-trip. */
 
    /* ── Tokens (Light Mode Default / Spectator Flow) ────────── */
    :root {
@@ -12,6 +13,12 @@
      --primary-hover:     #ff8555;
      --primary-dim:       rgba(255, 107, 53, 0.12);
      --primary-glow:      0 0 24px rgba(255, 107, 53, 0.2);
+     /* Brand orange rendered as TEXT on light surfaces fails WCAG AA
+        (2.6:1) — use this darker shade for orange text. Backgrounds and
+        borders keep using --primary. Dark theme overrides it back. */
+     --primary-text:      #C64A11;
+     /* Large/display text only needs 3:1 — this stays closer to brand. */
+     --primary-text-lg:   #E5470B;
    
      --gold:              #FFCC00;
      --gold-dim:          rgba(255, 204, 0, 0.15);
@@ -100,6 +107,8 @@
    
      --primary-dim:       rgba(255, 107, 53, 0.15);
      --primary-glow:      0 0 24px rgba(255, 107, 53, 0.35);
+     --primary-text:      #FF8555;
+     --primary-text-lg:   #FF6B35;
      --gold-dim:          rgba(255, 204, 0, 0.12);
      --gold-text:         var(--gold);
    
@@ -1138,6 +1147,16 @@
    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
    
    /* ── OrgHeader Desktop Styles ─────────────────────────────── */
+   /* Public tournament header reuses .site-header but isn't wrapped in
+      .organizer-flow, so without this it'd keep the raw gradient/glow that
+      OrgHeader gets flattened out of — flatten it the same way here. */
+   .site-header.public-tournament-header {
+     background: var(--bg);
+   }
+   .site-header.public-tournament-header::before {
+     display: none;
+   }
+
    .site-header.org-header .org-header-right {
      display: flex;
      align-items: center;
@@ -1558,7 +1577,7 @@
   max-width: 1000px;
   margin: 0 auto 32px;
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
   gap: 48px;
 }
 .footer-col h4 { font-family: var(--font-display); font-size: 12px; font-weight: 800; color: var(--ink); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }

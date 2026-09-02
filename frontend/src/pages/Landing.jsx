@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { getHomepageData, isLoggedIn, getMode, saveIntent } from "../api/client";
 import TournamentCard, { SPORT_LABELS } from "../components/shared/TournamentCard";
 import SiteFooter from "../components/shared/SiteFooter";
@@ -39,7 +39,7 @@ const navLinkStyle = {
   color: "var(--muted)", fontSize: 13, fontWeight: 600,
   fontFamily: "var(--font-body)", padding: "6px 14px",
   borderRadius: 6, transition: "color 0.2s",
-  whiteSpace: "nowrap",
+  whiteSpace: "nowrap", textDecoration: "none",
 };
 
 export default function Landing() {
@@ -57,7 +57,9 @@ export default function Landing() {
       const d = await getHomepageData();
       setData(d);
     } catch (e) {
-      console.error(e);
+      // warn, not error: a failed homepage fetch is non-fatal (page renders
+      // skeletons) and console.error trips Lighthouse's best-practices audit
+      console.warn("Homepage data fetch failed:", e);
     } finally {
       fetchingRef.current = false;
     }
@@ -118,27 +120,29 @@ export default function Landing() {
           justifyContent: "space-between", gap: 16,
         }}>
           {/* Brand */}
-          <div
-            onClick={() => navigate("/")}
+          <Link
+            to="/"
+            aria-label="TheScoreBoard — home"
             style={{
               fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 900,
               color: "var(--ink)", whiteSpace: "nowrap", cursor: "pointer",
               textTransform: "uppercase", letterSpacing: -0.5, lineHeight: 1, flexShrink: 0,
+              textDecoration: "none",
             }}
           >
             The<span style={{ color: "var(--primary)" }}>Score</span>Board
-          </div>
+          </Link>
 
           {/* Nav links — desktop only (display controlled by CSS .landing-nav) */}
           <nav className="landing-nav-center">
-            <button
+            <Link
+              to="/tournaments"
               style={navLinkStyle}
-              onClick={() => navigate("/tournaments")}
               onMouseEnter={e => e.currentTarget.style.color = "var(--primary)"}
               onMouseLeave={e => e.currentTarget.style.color = "var(--muted)"}
             >
               Find Tournaments
-            </button>
+            </Link>
             <button
               style={navLinkStyle}
               onClick={() => scrollTo(sportsRef)}
@@ -155,14 +159,14 @@ export default function Landing() {
             >
               How It Works
             </button>
-            <button
+            <Link
+              to="/about"
               style={navLinkStyle}
-              onClick={() => navigate("/about")}
               onMouseEnter={e => e.currentTarget.style.color = "var(--primary)"}
               onMouseLeave={e => e.currentTarget.style.color = "var(--muted)"}
             >
               About Us
-            </button>
+            </Link>
           </nav>
 
           {/* Right actions */}
@@ -170,6 +174,7 @@ export default function Landing() {
             {/* Theme toggle */}
             <button
               onClick={toggleTheme}
+              aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
               style={{
                 background: "none", border: "1px solid var(--border)",
                 borderRadius: 6, width: 34, height: 34, cursor: "pointer",
@@ -218,6 +223,8 @@ export default function Landing() {
         </div>
       </header>
 
+      <main>
+
       {/* ── HERO SPLIT ──────────────────────────────────────── */}
       <section className="hero-split" style={{ background: "var(--surface)" }}>
 
@@ -234,7 +241,7 @@ export default function Landing() {
           {/* Eyebrow */}
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
-            background: "rgba(255,107,53,0.1)", color: "var(--primary)",
+            background: "rgba(255,107,53,0.1)", color: "var(--primary-text)",
             borderRadius: 6, padding: "5px 12px",
             fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
             letterSpacing: 2, textTransform: "uppercase",
@@ -255,7 +262,7 @@ export default function Landing() {
             animation: "fadeUp 0.4s ease 0.1s both",
           }}>
             Your Local Sports Scene,{" "}
-            <span style={{ color: "var(--primary)" }}>Live & Trackable</span>
+            <span style={{ color: "var(--primary-text-lg)" }}>Live & Trackable</span>
           </h1>
 
           <p style={{
@@ -270,34 +277,37 @@ export default function Landing() {
             display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center",
             animation: "fadeUp 0.4s ease 0.3s both",
           }} className="hero-cta-row">
-            <button
-              onClick={() => navigate("/tournaments")}
+            <Link
+              to="/tournaments"
               style={{
                 background: "var(--primary)", color: "#fff",
                 border: "none", borderRadius: 9, padding: "14px 32px",
                 fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
                 textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer",
                 boxShadow: "0 4px 20px rgba(255,107,53,0.35)", transition: "all 0.2s",
+                textDecoration: "none", display: "inline-block",
               }}
               onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(255,107,53,0.45)"; }}
               onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(255,107,53,0.35)"; }}
             >
               Find Tournaments →
-            </button>
-            <button
-              onClick={() => { if (!loggedIn) saveIntent("player"); navigate(loggedIn ? (getMode() === "organiser" ? "/organiser" : "/player") : "/register"); }}
+            </Link>
+            <Link
+              to={loggedIn ? (getMode() === "organiser" ? "/organiser" : "/player") : "/register"}
+              onClick={() => { if (!loggedIn) saveIntent("player"); }}
               style={{
                 background: "none", color: "var(--ink)",
                 border: "2px solid var(--border)", borderRadius: 9, padding: "12px 28px",
                 fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
                 textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer",
                 transition: "all 0.2s",
+                textDecoration: "none", display: "inline-block",
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--ink)"; }}
             >
               {loggedIn ? "My Dashboard" : "Create Account"}
-            </button>
+            </Link>
           </div>
 
           {/* Instagram — below CTAs */}
@@ -344,7 +354,7 @@ export default function Landing() {
                 <div style={{
                   fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
                   textTransform: "uppercase", letterSpacing: 3,
-                  color: "var(--primary)", marginBottom: 8,
+                  color: "var(--primary-text)", marginBottom: 8,
                 }}>
                   Featured Tournaments
                 </div>
@@ -355,20 +365,21 @@ export default function Landing() {
                   Discover Tournaments
                 </div>
               </div>
-              <button
-                onClick={() => navigate("/tournaments")}
+              <Link
+                to="/tournaments"
                 style={{
                   background: "var(--primary)", border: "none",
                   color: "#fff", borderRadius: 8, padding: "10px 22px",
                   fontSize: 11, fontWeight: 800, cursor: "pointer",
                   fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: 1.5,
                   transition: "opacity 0.2s",
+                  textDecoration: "none", display: "inline-block",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
                 onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
               >
                 View All →
-              </button>
+              </Link>
             </div>
 
             {!data ? (
@@ -414,7 +425,7 @@ export default function Landing() {
             <div style={{
               fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
               textTransform: "uppercase", letterSpacing: 3,
-              color: "var(--primary)", marginBottom: 12,
+              color: "var(--primary-text)", marginBottom: 12,
             }}>
               How It Works
             </div>
@@ -630,7 +641,7 @@ export default function Landing() {
               <div style={{
                 fontFamily: "var(--font-display)", fontSize: 10, fontWeight: 800,
                 textTransform: "uppercase", letterSpacing: 3,
-                color: "var(--primary)", marginBottom: 8,
+                color: "var(--primary-text)", marginBottom: 8,
               }}>
                 Browse Sports
               </div>
@@ -651,9 +662,9 @@ export default function Landing() {
               const stats      = sportStats[sport.key];
               const tournCount = stats?.tournament_count || 0;
               return (
-                <div
+                <Link
                   key={sport.key}
-                  onClick={() => navigate(`/${sport.url}`)}
+                  to={`/${sport.url}`}
                   className="sport-browse-card"
                   style={{
                     display: "flex", alignItems: "center",
@@ -661,6 +672,7 @@ export default function Landing() {
                     border: `1.5px solid ${sport.color}28`,
                     background: `${sport.color}08`,
                     cursor: "pointer", transition: "all 0.2s", minHeight: 96,
+                    textDecoration: "none",
                   }}
                   onMouseEnter={e => {
                     e.currentTarget.style.background = `${sport.color}14`;
@@ -712,12 +724,14 @@ export default function Landing() {
                     paddingRight: 16, color: sport.color,
                     fontSize: 18, fontWeight: 900, opacity: 0.6, flexShrink: 0,
                   }}>→</div>
-                </div>
+                </Link>
               );
             })}
           </div>
         </div>
       </section>
+
+      </main>
 
       {/* ── FOOTER ──────────────────────────────────────────── */}
       <SiteFooter onHowItWorks={() => scrollTo(howItWorksRef)} />
