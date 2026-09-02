@@ -32,6 +32,8 @@ const SPORT_META = {
   badminton:    { icon: "🏸", label: "Badminton"    },
   cricket:      { icon: "🏏", label: "Cricket"      },
   football:     { icon: "⚽", label: "Football"     },
+  throw_ball:   { icon: "🤾", label: "Throw Ball"   },
+  tug_of_war:   { icon: "🪢", label: "Tug of War"   },
 };
 const sa = k => SPORT_META[k]?.icon || "🏆";
 const sl = k => SPORT_META[k]?.label  || k;
@@ -423,6 +425,8 @@ const SPORT_ACCENT_CFG = {
   football:     { accent:"#2563eb", rgb:"37,99,235"   },
   badminton:    { accent:"#7c3aed", rgb:"124,58,237"  },
   table_tennis: { accent:"#0891b2", rgb:"8,145,178"   },
+  throw_ball:   { accent:"#ec4899", rgb:"236,72,153"  },
+  tug_of_war:   { accent:"#a855f7", rgb:"168,85,247"  },
 };
 // Per-sport colors used inline (for multi-event pages)
 const SPORT_ACCENT = {
@@ -430,6 +434,8 @@ const SPORT_ACCENT = {
   football:     { color:"#2563eb", dim:"rgba(37,99,235,0.12)"   },
   badminton:    { color:"#7c3aed", dim:"rgba(124,58,237,0.12)"  },
   table_tennis: { color:"#0891b2", dim:"rgba(8,145,178,0.12)"   },
+  throw_ball:   { color:"#ec4899", dim:"rgba(236,72,153,0.12)"  },
+  tug_of_war:   { color:"#a855f7", dim:"rgba(168,85,247,0.12)"  },
 };
 const sAccent = (key) => SPORT_ACCENT[key] || { color:"var(--primary)", dim:"var(--primary-dim)" };
 

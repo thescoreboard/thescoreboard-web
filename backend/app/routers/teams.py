@@ -29,6 +29,7 @@ class TeamMemberIn(BaseModel):
     role:          Optional[str] = "player"
     jersey_number: Optional[int] = None
     age:           Optional[int] = None
+    gender:        Optional[str] = None  # used by gender-restricted events (e.g. throw ball women-only)
 
 
 SEED_SCORES = {"beginner": 2, "intermediate": 5, "advanced": 8, "pro": 10}
@@ -72,6 +73,7 @@ def _serialize_team(team: Team) -> dict:
                 "role":          m.role,
                 "jersey_number": m.jersey_number,
                 "age":           m.age,
+                "gender":        m.gender,
             }
             for m in sorted(team.members, key=lambda x: (x.role != "captain", x.role != "vice_captain", x.tm_id))
         ],
@@ -112,6 +114,7 @@ def create_team(
             role=m.role or "player",
             jersey_number=m.jersey_number,
             age=m.age,
+            gender=m.gender,
         ))
 
     db.commit()
@@ -354,6 +357,7 @@ def public_register_team(
                 role=m.role if m.role else ("player1" if i == 0 else "player2"),
                 jersey_number=m.jersey_number,
                 age=m.age,
+                gender=m.gender,
             ))
 
     # ── Enrol in target events

@@ -116,6 +116,7 @@ def _serialize_match(m: Match) -> dict:
         "round":          m.round,
         "status":         m.status,
         "table_number":   m.table_number,
+        "weight_category": m.weight_category,
         "current_server": m.current_server,
         "live_state":     m.live_state,
         "started_at":     str(m.started_at)  if m.started_at  else None,
@@ -548,6 +549,7 @@ def create_match(
         stage=data.stage,
         status="scheduled",
         table_number=data.table_number,
+        weight_category=data.weight_category,
         live_state={"sets_to_win": default_stw},
     )
     db.add(match)
@@ -599,6 +601,8 @@ def update_match_status(
     match.status = data.status
     if data.table_number is not None:
         match.table_number = data.table_number
+    if data.weight_category is not None:
+        match.weight_category = data.weight_category
     if data.sets_to_win is not None:
         ls = dict(match.live_state or {})
         ls["sets_to_win"] = data.sets_to_win
@@ -640,8 +644,15 @@ def update_score(
 
     sport = event.sport_key
 
-    # ── TABLE TENNIS & BADMINTON (set-based) ──────────────────
-    if sport in ("table_tennis", "badminton"):
+    # ── TABLE TENNIS, BADMINTON & THROW BALL (set-based) ──────
+    if sport in ("table_tennis", "badminton", "throw_ball"):
+        if sport == "throw_ball":
+            pts = config.get("points_per_set", 15)
+            if data.score_p1 > pts or data.score_p2 > pts:
+                raise HTTPException(status_code=400, detail=f"A team's score cannot exceed {pts}")
+            if data.score_p1 == pts and data.score_p2 == pts:
+                raise HTTPException(status_code=400, detail="Both teams cannot score 15 in the same set — a tie is impossible")
+
         if data.current_server is not None:
             match.current_server = data.current_server
 

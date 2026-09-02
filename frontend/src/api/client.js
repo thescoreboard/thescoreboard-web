@@ -107,6 +107,20 @@ export const deleteTournament = (orgId, tournamentId) =>
 export const getWorkspace = (tId) => request("GET", `/orgs/tournaments/${tId}/workspace`);
 export const transitionTournament = (tId, status) => request("POST", `/orgs/tournaments/${tId}/transition?target_status=${status}`);
 
+// Excel export — binary response, so it bypasses the JSON request() helper.
+export async function exportTournamentExcel(tId) {
+  const res = await fetch(`${BASE}/orgs/tournaments/${tId}/export`, { headers: authHeaders() });
+  if (!res.ok) {
+    if (res.status === 401) clearToken();
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.detail || `Export failed: ${res.status}`);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") || "";
+  const match = cd.match(/filename="?([^"]+)"?/);
+  return { blob, filename: match ? match[1] : "thescoreboard_export.xlsx" };
+}
+
 // Sponsors
 export const createSponsor = (tId, d)         => request("POST",   `/orgs/tournaments/${tId}/sponsors`, d);
 export const updateSponsor = (tId, sId, d)     => request("PATCH",  `/orgs/tournaments/${tId}/sponsors/${sId}`, d);
@@ -159,6 +173,34 @@ export const undoSet = (mId) => request("POST", `/matches/${mId}/undo-set`);
 export const walkoverMatch = (mId, winnerPos) => request("POST", `/matches/${mId}/walkover?winner_position=${winnerPos}`);
 export const rematchMatch = (mId) => request("POST", `/matches/${mId}/rematch`);
 export const deleteMatch = (mId) => request("DELETE", `/matches/${mId}`);
+
+// Throw Ball
+export const getThrowBallLineup   = (mId) => request("GET", `/matches/${mId}/throw-ball/lineup`);
+export const submitThrowBallLineup = (mId, position, lineup) =>
+  request("POST", `/matches/${mId}/throw-ball/lineup`, { position, lineup });
+export const recordThrowBallTimeout = (mId, position) =>
+  request("POST", `/matches/${mId}/throw-ball/timeout`, { position });
+export const substituteThrowBallPlayer = (mId, position, outId, inId) =>
+  request("POST", `/matches/${mId}/throw-ball/substitute`, {
+    position, out_team_member_id: outId, in_team_member_id: inId,
+  });
+export const getThrowBallLive = (mId) => request("GET", `/matches/${mId}/throw-ball/live`);
+
+// Tug of War
+export const getTugOfWarWeighIns = (mId) => request("GET", `/matches/${mId}/tug-of-war/weigh-in`);
+export const submitTugOfWarWeighIn = (mId, position, pullers) =>
+  request("POST", `/matches/${mId}/tug-of-war/weigh-in`, { position, pullers });
+export const recordTugOfWarPull = (mId, winningPosition, durationSeconds) =>
+  request("POST", `/matches/${mId}/tug-of-war/pull`, { winning_position: winningPosition, duration_seconds: durationSeconds });
+export const recordTugOfWarCaution = (mId, position, reason) =>
+  request("POST", `/matches/${mId}/tug-of-war/caution`, { position, reason });
+export const tugOfWarInjurySub = (mId, position, injuredId, replacementId, replacementWeightKg) =>
+  request("POST", `/matches/${mId}/tug-of-war/injury-substitute`, {
+    position, injured_team_member_id: injuredId, replacement_team_member_id: replacementId,
+    replacement_weight_kg: replacementWeightKg,
+  });
+export const getTugOfWarLive = (mId) => request("GET", `/matches/${mId}/tug-of-war/live`);
+export const getTugOfWarWeightCategories = (eId) => request("GET", `/events/${eId}/tug-of-war/weight-categories`);
 
 // Public
 export const getHomepageData = (q) => request("GET", `/public/home${q ? `?q=${encodeURIComponent(q)}` : ""}`);

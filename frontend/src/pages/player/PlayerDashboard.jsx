@@ -26,13 +26,16 @@ function useWindowWidth() {
 const SPORT_LABELS = {
   table_tennis: "Table Tennis", football: "Football",
   badminton: "Badminton",       cricket:  "Cricket",
+  throw_ball: "Throw Ball",     tug_of_war: "Tug of War",
 };
 const SPORT_COLORS = {
   table_tennis: "#3b82f6", football: "#16a34a",
   badminton:    "#f59e0b", cricket:  "#ef4444",
+  throw_ball:   "#ec4899", tug_of_war: "#a855f7",
 };
 const SPORT_ICONS = {
   table_tennis: "🏓", football: "⚽", badminton: "🏸", cricket: "🏏",
+  throw_ball: "🤾",   tug_of_war: "🪢",
 };
 const STATUS_LABELS = {
   live: "Live", registration: "Open", upcoming: "Upcoming",

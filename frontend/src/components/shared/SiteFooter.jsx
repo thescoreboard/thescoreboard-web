@@ -7,6 +7,8 @@ const FOOTER_SPORTS = [
   { key: "cricket",      url: "cricket"      },
   { key: "table_tennis", url: "table-tennis" },
   { key: "badminton",    url: "badminton"    },
+  { key: "throw_ball",   url: "throw-ball"   },
+  { key: "tug_of_war",   url: "tug-of-war"   },
 ];
 
 // Shared site footer — identical on the landing page and public tournament pages.
