@@ -21,6 +21,8 @@ const SPORT_META = {
   badminton:    { icon: "🏸" },
   cricket:      { icon: "🏏" },
   football:     { icon: "⚽" },
+  throw_ball:   { icon: "🤾" },
+  tug_of_war:   { icon: "🪢" },
 };
 const sa = k => SPORT_META[k]?.icon || "🏆";
 

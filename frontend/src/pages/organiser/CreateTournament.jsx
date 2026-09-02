@@ -11,6 +11,8 @@ const SPORTS = [
   { key: "badminton",    label: "Badminton",    abbrev: "🏸" },
   { key: "cricket",      label: "Cricket",      abbrev: "🏏" },
   { key: "football",     label: "Football",     abbrev: "⚽" },
+  { key: "throw_ball",   label: "Throw Ball",   abbrev: "🤾" },
+  { key: "tug_of_war",   label: "Tug of War",   abbrev: "🪢" },
 ];
 
 const SPORT_SUBFORMATS = {
@@ -52,6 +54,36 @@ const SPORT_SUBFORMATS = {
       key: "5_a_side",  label: "5-a-side",  sub: "5 players per team — futsal / small-sided",
       participant_type: "team", config: { team_size: 5, substitutes: 2 },
       configFields: [{ key: "substitutes", label: "Substitutes on bench", type: "stepper", min: 0, max: 3, default: 2, quickPicks: [0, 1, 2, 3] }],
+    },
+  ],
+  throw_ball: [
+    {
+      key: "standard", label: "Standard", sub: "7 vs 7 on court, first to 15 wins the set",
+      participant_type: "team", config: { sets_to_win: 2, gender_format: "open" },
+      configFields: [
+        {
+          key: "gender_format", label: "Category", type: "select", default: "open",
+          options: [
+            { v: "open",       label: "Open" },
+            { v: "mixed",      label: "Mixed" },
+            { v: "women_only", label: "Women Only" },
+          ],
+        },
+        {
+          key: "sets_to_win", label: "Format", type: "select", default: 2,
+          options: [
+            { v: 2, label: "Best of 3 (first to 2 sets)" },
+            { v: 3, label: "Best of 5 (first to 3 sets)" },
+          ],
+        },
+      ],
+    },
+  ],
+  tug_of_war: [
+    {
+      key: "standard", label: "Standard", sub: "8 pullers per team, best of 3 pulls",
+      participant_type: "team", config: {},
+      configFields: [],
     },
   ],
 };
@@ -549,13 +581,25 @@ export default function CreateTournament() {
                                 <label style={{ display: "block", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: c.muted, marginBottom: 8 }}>
                                   {field.label}
                                 </label>
-                                <Stepper
-                                  value={ev.sport_config?.[field.key] ?? field.default}
-                                  onChange={v => updateEventConfig(i, field.key, v)}
-                                  min={field.min}
-                                  max={field.max}
-                                  quickPicks={field.quickPicks}
-                                />
+                                {field.type === "select" ? (
+                                  <select className="input"
+                                    value={ev.sport_config?.[field.key] ?? field.default}
+                                    onChange={e => {
+                                      const raw = e.target.value;
+                                      const isNumeric = typeof field.options[0]?.v === "number";
+                                      updateEventConfig(i, field.key, isNumeric ? parseInt(raw) : raw);
+                                    }}>
+                                    {field.options.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+                                  </select>
+                                ) : (
+                                  <Stepper
+                                    value={ev.sport_config?.[field.key] ?? field.default}
+                                    onChange={v => updateEventConfig(i, field.key, v)}
+                                    min={field.min}
+                                    max={field.max}
+                                    quickPicks={field.quickPicks}
+                                  />
+                                )}
                                 {field.hint && <div style={{ fontSize: 11, color: c.muted, marginTop: 6 }}>{field.hint}</div>}
                               </div>
                             ))}

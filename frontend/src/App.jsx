@@ -74,6 +74,8 @@ export default function App() {
         <Route path="/cricket"                       element={<SportPage />} />
         <Route path="/table-tennis"                  element={<SportPage />} />
         <Route path="/badminton"                     element={<SportPage />} />
+        <Route path="/throw-ball"                    element={<SportPage />} />
+        <Route path="/tug-of-war"                    element={<SportPage />} />
         <Route path="/:sportUrl/tournament/:slug"    element={<TournamentPublic />} />
         <Route path="/t/:slug"                       element={<TournamentPublic />} />
         <Route path="/t/:slug/register"              element={<TournamentRegister />} />

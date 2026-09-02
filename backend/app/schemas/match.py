@@ -35,6 +35,7 @@ class MatchOut(BaseModel):
     status: str
     table_number: Optional[int]
     court_number: Optional[int]
+    weight_category: Optional[str]
     current_server: Optional[int]
     scheduled_at: Optional[datetime]
     started_at: Optional[datetime]
@@ -58,6 +59,7 @@ class MatchCreate(BaseModel):
     team1_id: Optional[int] = None
     team2_id: Optional[int] = None
     table_number: Optional[int] = None
+    weight_category: Optional[str] = None  # tug of war
 
 
 class ScoreUpdate(BaseModel):
@@ -74,3 +76,4 @@ class MatchStatusUpdate(BaseModel):
     status: str  # scheduled | live | done
     table_number: Optional[int] = None
     sets_to_win: Optional[int] = None
+    weight_category: Optional[str] = None  # tug of war

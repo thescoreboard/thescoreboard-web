@@ -5,10 +5,12 @@ import TournamentCard, { SPORT_LABELS } from "../components/shared/TournamentCar
 import SiteFooter from "../components/shared/SiteFooter";
 
 const SPORTS_CONFIG = [
-  { key: "football",     url: "football",     color: "#22c55e", icon: "⚽" },
-  { key: "cricket",      url: "cricket",      color: "#D97706", icon: "🏏" },
-  { key: "table_tennis", url: "table-tennis", color: "#FF6B35", icon: "🏓" },
-  { key: "badminton",    url: "badminton",    color: "#38bdf8", icon: "🏸" },
+  { key: "football",     url: "football",      color: "#22c55e", icon: "⚽" },
+  { key: "cricket",      url: "cricket",       color: "#D97706", icon: "🏏" },
+  { key: "table_tennis", url: "table-tennis",  color: "#FF6B35", icon: "🏓" },
+  { key: "badminton",    url: "badminton",     color: "#38bdf8", icon: "🏸" },
+  { key: "throw_ball",   url: "throw-ball",    color: "#ec4899", icon: "🤾" },
+  { key: "tug_of_war",   url: "tug-of-war",    color: "#a855f7", icon: "🪢" },
 ];
 
 

@@ -3,6 +3,8 @@ export const SPORT_LABELS = {
   badminton:    "Badminton",
   cricket:      "Cricket",
   football:     "Football",
+  throw_ball:   "Throw Ball",
+  tug_of_war:   "Tug of War",
 };
 
 export const SPORT_ICONS = {
@@ -10,6 +12,8 @@ export const SPORT_ICONS = {
   badminton:    "🏸",
   cricket:      "🏏",
   football:     "⚽",
+  throw_ball:   "🤾",
+  tug_of_war:   "🪢",
 };
 
 // Sport accent colors for top-strip
@@ -18,6 +22,8 @@ const SPORT_COLOR = {
   badminton:    "#38bdf8",
   cricket:      "#D97706",
   football:     "#22c55e",
+  throw_ball:   "#ec4899",
+  tug_of_war:   "#a855f7",
 };
 
 const STATUS_META = {

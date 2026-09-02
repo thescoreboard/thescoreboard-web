@@ -5,13 +5,15 @@ import Header from "../components/shared/Header";
 import TournamentCard, { SPORT_LABELS, SPORT_ICONS } from "../components/shared/TournamentCard";
 import usePageMeta from "../hooks/usePageMeta";
 
-const SPORT_ABBREV = { table_tennis: "🏓", badminton: "🏸", cricket: "🏏", football: "⚽" };
+const SPORT_ABBREV = { table_tennis: "🏓", badminton: "🏸", cricket: "🏏", football: "⚽", throw_ball: "🤾", tug_of_war: "🪢" };
 
 const SPORT_URL_TO_KEY = {
   football:       "football",
   cricket:        "cricket",
   "table-tennis": "table_tennis",
   badminton:      "badminton",
+  "throw-ball":   "throw_ball",
+  "tug-of-war":   "tug_of_war",
 };
 
 const SPORT_COLOR = {
@@ -19,6 +21,8 @@ const SPORT_COLOR = {
   cricket:      "#D97706",
   table_tennis: "#FF6B35",
   badminton:    "#38bdf8",
+  throw_ball:   "#ec4899",
+  tug_of_war:   "#a855f7",
 };
 
 const STATUS_FILTERS = [

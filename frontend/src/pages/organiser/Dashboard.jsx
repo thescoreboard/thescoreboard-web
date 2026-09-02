@@ -13,7 +13,7 @@ const STATUS_META = {
   completed: { label: "Completed", pill: "pill-green" },
 };
 
-const SPORT_EMOJI  = { table_tennis:"🏓", badminton:"🏸", cricket:"🏏", football:"⚽" };
+const SPORT_EMOJI  = { table_tennis:"🏓", badminton:"🏸", cricket:"🏏", football:"⚽", throw_ball:"🤾", tug_of_war:"🪢" };
 const sportIcons   = (events=[]) => {
   const keys = [...new Set(events.map(e => e.sport_key).filter(Boolean))];
   if (!keys.length) return null;
@@ -135,7 +135,7 @@ export default function Dashboard() {
     tournaments.flatMap(t => (t.events||[]).map(e => e.sport_key).filter(Boolean))
   )];
 
-  const SPORT_LABEL = { table_tennis:"Table Tennis", badminton:"Badminton", cricket:"Cricket", football:"Football" };
+  const SPORT_LABEL = { table_tennis:"Table Tennis", badminton:"Badminton", cricket:"Cricket", football:"Football", throw_ball:"Throw Ball", tug_of_war:"Tug of War" };
 
   const sorted = [...tournaments]
     .filter(t => filterStatus === "all" || t.status === filterStatus)

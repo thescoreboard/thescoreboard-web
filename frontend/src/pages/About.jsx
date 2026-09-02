@@ -1,9 +1,9 @@
 /**
- * About — the story behind TheScoreBoard.
+ * About — what TheScoreBoard is and who it's for.
  * Linked from the landing-page footer.
  */
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import usePageMeta from "../hooks/usePageMeta";
 
 const INSTAGRAM_URL  = "https://www.instagram.com/thescoreboard.in/";
@@ -37,40 +37,58 @@ const sectionLabel = {
 const bodyText = { fontSize: 15, lineHeight: 1.85, color: "var(--ink)", marginBottom: 18 };
 
 export default function About() {
-  usePageMeta("About Us", "The story behind TheScoreBoard — a live tournament platform built for grassroots sports communities.");
+  usePageMeta("About Us", "TheScoreBoard is a live scoring and tournament platform built for grassroots sports communities.");
   const navigate = useNavigate();
   const w = useW();
   const isDesktop = w >= 860;
 
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+  const toggleTheme = () => {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    localStorage.setItem("theme", next);
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--ink)" }}>
-      {/* Nav bar */}
-      <div style={{ borderBottom: "1px solid var(--border)", padding: "14px clamp(16px, 4vw, 24px)" }}>
-        <div style={{
-          maxWidth: PAGE_MAX, margin: "0 auto",
-          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-        }}>
-          <Link to="/" style={{ textDecoration: "none", whiteSpace: "nowrap" }}>
-            <span style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(13px, 3.8vw, 16px)", color: "var(--ink)" }}>
-              THE<span style={{ color: "var(--primary)" }}>SCORE</span>BOARD
-            </span>
-          </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: "clamp(12px, 3vw, 20px)", flexShrink: 0 }}>
-            <Link to="/tournaments" className="landing-cta-btn">Tournaments →</Link>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Hero band — full-bleed brand color so wide screens don't read as empty ── */}
-      <div style={{ background: "#0d0d0d", padding: "clamp(40px, 7vw, 72px) clamp(16px, 4vw, 24px)" }}>
+      {/* ── Hero band — full-bleed brand gradient, stands in for the site header ── */}
+      <div style={{ background: "linear-gradient(135deg, #150800 0%, #2a1000 100%)", padding: "clamp(20px, 4vw, 28px) clamp(16px, 4vw, 24px) clamp(40px, 7vw, 72px)" }}>
         <div style={{ maxWidth: PAGE_MAX, margin: "0 auto" }}>
-          <p style={{ ...sectionLabel, color: "var(--primary)", marginBottom: 14 }}>Our Journey</p>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "clamp(24px, 5vw, 44px)" }}>
+            <button
+              onClick={toggleTheme}
+              aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              style={{
+                background: "none", border: "1px solid rgba(255,255,255,0.25)",
+                borderRadius: 6, width: 34, height: 34, cursor: "pointer",
+                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              {theme === "light" ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                  <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+              )}
+            </button>
+          </div>
+          <p style={{ ...sectionLabel, color: "var(--primary)", marginBottom: 14 }}>About TheScoreBoard</p>
           <h1 style={{
             fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 46px)",
             fontWeight: 900, letterSpacing: -1, lineHeight: 1.12, color: "#fff",
             maxWidth: 720, margin: 0,
           }}>
-            It started with one local tournament.
+            Built for the games happening in your local ground, right now.
           </h1>
         </div>
       </div>
@@ -84,21 +102,22 @@ export default function About() {
         gap: isDesktop ? 56 : 36,
         alignItems: "start",
       }}>
-        {/* Left: the story */}
+        {/* Left: what TheScoreBoard is and does */}
         <div>
           <p style={bodyText}>
-            TheScoreBoard was born when a developer with a passion for sports
-            built a website for a local table tennis tournament. Suddenly there
-            were live scores on every phone instead of shouted announcements, and
-            brackets that updated themselves instead of paper on a wall. Everyone
-            absolutely loved it.
+            TheScoreBoard is a live scoring and tournament management platform —
+            built so that any local tournament, from a school table tennis meet
+            to a weekend football league, can run with the same live scores,
+            brackets, and player profiles that big-league sports take for
+            granted.
           </p>
           <p style={bodyText}>
-            That reaction sparked the bigger idea: a platform where{" "}
-            <strong>organisers</strong> host tournaments hassle-free,{" "}
-            <strong>spectators</strong> follow live scores from anywhere, and{" "}
-            <strong>players</strong> build a profile that travels with them from
-            event to event.
+            No more shouted scores across a court, no more paper brackets taped
+            to a wall. <strong>Organisers</strong> set up and run a tournament
+            in minutes. <strong>Spectators</strong> follow live scores from
+            their phones, wherever they are. <strong>Players</strong> carry a
+            profile — match history, stats, results — from one event to the
+            next.
           </p>
 
           {/* Mission callout */}
@@ -107,27 +126,20 @@ export default function About() {
             background: "var(--elevated)", borderRadius: "0 12px 12px 0",
           }}>
             <p style={{ fontSize: 16, lineHeight: 1.75, fontWeight: 600, margin: 0 }}>
-              While mainstream apps focus on professional sports, TheScoreBoard
-              exists to empower <span style={{ color: "var(--primary)" }}>grassroots and local tournaments</span> —
-              the club leagues, school championships, and community events where
-              most of the world actually plays.
+              Mainstream sports apps are built for the pros. TheScoreBoard is
+              built for everyone else — <span style={{ color: "var(--primary)" }}>club leagues, school
+              championships, and community tournaments</span> — where most of
+              the world actually plays.
             </p>
           </div>
         </div>
 
-        {/* Right: founder + contact + CTAs, boxed as a card so wide screens
-            get a real second column instead of empty margin */}
+        {/* Right: contact + CTAs, boxed as a card so wide screens get a
+            real second column instead of empty margin */}
         <div style={{
           background: "var(--elevated)", border: "1px solid var(--border)",
           borderRadius: 16, padding: 24,
         }}>
-          <p style={sectionLabel}>Who's Behind It</p>
-          <p style={{ ...bodyText, fontSize: 14, marginBottom: 24 }}>
-            TheScoreBoard is designed and built by <strong>Rejinold Johnson</strong> —
-            the developer from that first tournament, building the tool he wished
-            existed courtside.
-          </p>
-
           <p style={sectionLabel}>Reach Out</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
             <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" style={contactRow}>
@@ -180,6 +192,17 @@ export default function About() {
               }}
             >
               Follow Live Scores
+            </button>
+            <button
+              onClick={() => navigate("/")}
+              style={{
+                background: "transparent", color: "var(--muted, var(--ink))",
+                border: "none", padding: "13px 18px", cursor: "pointer",
+                fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800,
+                textTransform: "uppercase", letterSpacing: 1,
+              }}
+            >
+              ← Home
             </button>
           </div>
         </div>

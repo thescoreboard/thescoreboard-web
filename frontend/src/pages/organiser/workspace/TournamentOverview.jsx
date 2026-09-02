@@ -5,6 +5,7 @@ import OrgHeader from "../../../components/shared/OrgHeader";
 import PageLoader from "../../../components/shared/PageLoader";
 import SportSetupModal from "../../../components/organiser/SportSetupModal";
 import { ShareButton } from "../../../components/shared/ShareButton";
+import { DownloadExcelButton } from "../../../components/organiser/DownloadExcelButton";
 import { MediaUpload } from "../../../components/shared/MediaUpload";
 import SponsorsSection from "../../../components/organiser/SponsorsSection";
 import MembersSection from "../../../components/organiser/MembersSection";
@@ -23,6 +24,8 @@ const SPORT_META = {
   badminton:    { abbrev: "🏸", label: "Badminton",    type: "individual" },
   cricket:      { abbrev: "🏏", label: "Cricket",      type: "team"       },
   football:     { abbrev: "⚽", label: "Football",     type: "team"       },
+  throw_ball:   { abbrev: "🤾", label: "Throw Ball",   type: "team"       },
+  tug_of_war:   { abbrev: "🪢", label: "Tug of War",   type: "team"       },
 };
 
 const STATUS_PILL = {
@@ -411,6 +414,11 @@ export default function TournamentOverview() {
             </div>
           );
         })()}
+
+        {/* ── EXPORT ── */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+          <DownloadExcelButton tournamentId={t.tournament_id} flash={flash} />
+        </div>
 
         {/* ── TOURNAMENT STATUS (unlocked once details are complete) ── */}
         {detailsComplete && (

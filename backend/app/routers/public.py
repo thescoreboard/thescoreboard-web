@@ -100,6 +100,8 @@ SPORT_URL_MAP = {
     "cricket":     "cricket",
     "table-tennis":"table_tennis",
     "badminton":   "badminton",
+    "throw-ball":  "throw_ball",
+    "tug-of-war":  "tug_of_war",
 }
 
 SPORT_KEY_TO_URL = {v: k for k, v in SPORT_URL_MAP.items()}
